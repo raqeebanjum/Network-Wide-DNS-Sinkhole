@@ -25,14 +25,7 @@ type List struct {
 	Name          string
 	URL           string
 	Enabled       bool
-	Format        string
-	License       string
-	Homepage      string
-	ETag          string
-	LastModified  string
-	LastCheckedAt *time.Time
 	LastUpdatedAt *time.Time
-	LastError     string
 	DomainCount   int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -40,36 +33,9 @@ type List struct {
 
 // Input contains normalized blocklist metadata supplied by the API.
 type Input struct {
-	Name     string
-	URL      string
-	Enabled  bool
-	License  string
-	Homepage string
-}
-
-// Preset is a curated, one-click blocklist source.
-type Preset struct {
-	Slug        string
-	Name        string
-	URL         string
-	License     string
-	Homepage    string
-	Description string
-}
-
-// FetchResult is the HTTP download outcome for one list.
-type FetchResult struct {
-	NotModified  bool
-	Body         []byte
-	ETag         string
-	LastModified string
-}
-
-// ParseResult is a validated set of domains from one list.
-type ParseResult struct {
-	Domains []string
-	Format  string
-	Ignored int
+	Name    string
+	URL     string
+	Enabled bool
 }
 
 // RefreshResult summarizes one list in a refresh-all operation.

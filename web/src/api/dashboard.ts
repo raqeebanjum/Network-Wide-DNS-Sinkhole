@@ -2,8 +2,6 @@ import { requestJSON, requestVoid } from './client'
 import type {
   BlocklistEntry,
   BlocklistInput,
-  BlocklistPreset,
-  BlocklistPresetsResponse,
   BlocklistsResponse,
   HealthResponse,
   QueriesResponse,
@@ -79,16 +77,6 @@ export async function fetchBlocklists(
     signal,
   })
   return response.blocklists
-}
-
-export async function fetchBlocklistPresets(
-  signal?: AbortSignal,
-): Promise<BlocklistPreset[]> {
-  const response = await requestJSON<BlocklistPresetsResponse>(
-    '/api/blocklists/presets',
-    { signal },
-  )
-  return response.presets
 }
 
 export function createBlocklist(

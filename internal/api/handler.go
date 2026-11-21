@@ -39,7 +39,6 @@ type RuleService interface {
 // BlocklistService manages downloaded blocklist sources.
 type BlocklistService interface {
 	List(ctx context.Context) ([]blocklists.List, error)
-	Presets() []blocklists.Preset
 	Create(ctx context.Context, input blocklists.Input) (blocklists.List, error)
 	Update(ctx context.Context, id int64, input blocklists.Input) (blocklists.List, error)
 	Delete(ctx context.Context, id int64) error
@@ -104,12 +103,7 @@ type blocklistResponse struct {
 	Name          string     `json:"name"`
 	URL           string     `json:"url"`
 	Enabled       bool       `json:"enabled"`
-	Format        string     `json:"format"`
-	License       string     `json:"license"`
-	Homepage      string     `json:"homepage"`
-	LastCheckedAt *time.Time `json:"last_checked_at"`
 	LastUpdatedAt *time.Time `json:"last_updated_at"`
-	LastError     string     `json:"last_error"`
 	DomainCount   int        `json:"domain_count"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
@@ -119,25 +113,10 @@ type blocklistsResponse struct {
 	Blocklists []blocklistResponse `json:"blocklists"`
 }
 
-type blocklistPresetResponse struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	URL         string `json:"url"`
-	License     string `json:"license"`
-	Homepage    string `json:"homepage"`
-	Description string `json:"description"`
-}
-
-type blocklistPresetsResponse struct {
-	Presets []blocklistPresetResponse `json:"presets"`
-}
-
 type blocklistRequest struct {
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Enabled  *bool  `json:"enabled"`
-	License  string `json:"license"`
-	Homepage string `json:"homepage"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Enabled *bool  `json:"enabled"`
 }
 
 type refreshAllResponse struct {
@@ -254,7 +233,6 @@ func NewHandler(deps Dependencies) http.Handler {
 	mux.HandleFunc("PUT /api/rules/{id}", api.updateRule)
 	mux.HandleFunc("DELETE /api/rules/{id}", api.deleteRule)
 	mux.HandleFunc("GET /api/blocklists", api.listBlocklists)
-	mux.HandleFunc("GET /api/blocklists/presets", api.listBlocklistPresets)
 	mux.HandleFunc("POST /api/blocklists", api.createBlocklist)
 	mux.HandleFunc("POST /api/blocklists/refresh", api.refreshAllBlocklists)
 	mux.HandleFunc("PUT /api/blocklists/{id}", api.updateBlocklist)
@@ -388,25 +366,6 @@ func (h *handler) listBlocklists(w http.ResponseWriter, request *http.Request) {
 	response := blocklistsResponse{Blocklists: make([]blocklistResponse, 0, len(lists))}
 	for _, list := range lists {
 		response.Blocklists = append(response.Blocklists, newBlocklistResponse(list))
-	}
-	writeJSON(w, http.StatusOK, response)
-}
-
-func (h *handler) listBlocklistPresets(w http.ResponseWriter, _ *http.Request) {
-	if !h.requireBlocklists(w) {
-		return
-	}
-	presets := h.blocklists.Presets()
-	response := blocklistPresetsResponse{Presets: make([]blocklistPresetResponse, 0, len(presets))}
-	for _, preset := range presets {
-		response.Presets = append(response.Presets, blocklistPresetResponse{
-			Slug:        preset.Slug,
-			Name:        preset.Name,
-			URL:         preset.URL,
-			License:     preset.License,
-			Homepage:    preset.Homepage,
-			Description: preset.Description,
-		})
 	}
 	writeJSON(w, http.StatusOK, response)
 }
@@ -545,11 +504,9 @@ func decodeBlocklistInput(w http.ResponseWriter, request *http.Request, allowMis
 	}
 
 	return blocklists.Input{
-		Name:     body.Name,
-		URL:      body.URL,
-		Enabled:  enabled,
-		License:  body.License,
-		Homepage: body.Homepage,
+		Name:    body.Name,
+		URL:     body.URL,
+		Enabled: enabled,
 	}, true
 }
 
@@ -568,12 +525,7 @@ func newBlocklistResponse(list blocklists.List) blocklistResponse {
 		Name:          list.Name,
 		URL:           list.URL,
 		Enabled:       list.Enabled,
-		Format:        list.Format,
-		License:       list.License,
-		Homepage:      list.Homepage,
-		LastCheckedAt: list.LastCheckedAt,
 		LastUpdatedAt: list.LastUpdatedAt,
-		LastError:     list.LastError,
 		DomainCount:   list.DomainCount,
 		CreatedAt:     list.CreatedAt,
 		UpdatedAt:     list.UpdatedAt,

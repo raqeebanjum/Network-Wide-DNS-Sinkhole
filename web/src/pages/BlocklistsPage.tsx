@@ -2,31 +2,20 @@ import { useEffect, useState, type FormEvent } from 'react'
 import {
   createBlocklist,
   deleteBlocklist,
-  fetchBlocklistPresets,
   fetchBlocklists,
   refreshAllBlocklists,
   refreshBlocklist,
   updateBlocklist,
 } from '../api/dashboard'
-import type {
-  BlocklistEntry,
-  BlocklistInput,
-  BlocklistPreset,
-} from '../api/types'
+import type { BlocklistEntry, BlocklistInput } from '../api/types'
 import { EmptyState, ErrorAlert, LoadingPanel } from '../components/Feedback'
 import { formatDateTime, formatNumber } from '../lib/format'
 import { useModalFocus } from '../lib/useModalFocus'
 
-const emptyForm = {
-  name: '',
-  url: '',
-  license: '',
-  homepage: '',
-}
+const emptyForm = { name: '', url: '' }
 
 export function BlocklistsPage() {
   const [lists, setLists] = useState<BlocklistEntry[]>([])
-  const [presets, setPresets] = useState<BlocklistPreset[]>([])
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -48,13 +37,9 @@ export function BlocklistsPage() {
       if (inFlight) return
       inFlight = true
       try {
-        const [nextLists, nextPresets] = await Promise.all([
-          fetchBlocklists(controller.signal),
-          fetchBlocklistPresets(controller.signal),
-        ])
+        const nextLists = await fetchBlocklists(controller.signal)
         if (!active) return
         setLists(sortLists(nextLists))
-        setPresets(nextPresets)
         setUpdatedAt(new Date())
         setError('')
       } catch (loadError) {
@@ -98,18 +83,14 @@ export function BlocklistsPage() {
     }
   }
 
-  async function addList(
-    input: BlocklistInput,
-    actionID: string,
-  ): Promise<boolean> {
-    setAction(actionID)
+  async function addList(input: BlocklistInput): Promise<boolean> {
+    setAction('add')
     setActionError('')
     try {
       const created = await createBlocklist(input)
       setLists((current) => sortLists([...current, created]))
       setAction(`refresh-${created.id}`)
-      const refreshed = await refreshBlocklist(created.id)
-      replaceList(refreshed)
+      replaceList(await refreshBlocklist(created.id))
       return true
     } catch (addError) {
       setActionError(
@@ -124,28 +105,9 @@ export function BlocklistsPage() {
     }
   }
 
-  async function addPreset(preset: BlocklistPreset) {
-    await addList(
-      {
-        name: preset.name,
-        url: preset.url,
-        enabled: true,
-        license: preset.license,
-        homepage: preset.homepage,
-      },
-      `add-${preset.slug}`,
-    )
-  }
-
   async function addCustom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const added = await addList(
-      {
-        ...form,
-        enabled: true,
-      },
-      'add-custom',
-    )
+    const added = await addList({ ...form, enabled: true })
     if (added) setForm(emptyForm)
   }
 
@@ -203,8 +165,6 @@ export function BlocklistsPage() {
           name: list.name,
           url: list.url,
           enabled: !list.enabled,
-          license: list.license,
-          homepage: list.homepage,
         }),
       )
     } catch (toggleError) {
@@ -250,11 +210,6 @@ export function BlocklistsPage() {
     setUpdatedAt(new Date())
   }
 
-  const configuredURLs = new Set(lists.map((list) => list.url))
-  const availablePresets = presets.filter(
-    (preset) => !configuredURLs.has(preset.url),
-  )
-
   return (
     <div>
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -266,8 +221,7 @@ export function BlocklistsPage() {
             Blocklists
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
-            Download public domain lists into the active matcher. Failed
-            refreshes keep the last working snapshot.
+            Download hosts-style or plain-domain lists into the active matcher.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -304,69 +258,10 @@ export function BlocklistsPage() {
         </div>
       )}
 
-      <div className="alert alert-warning alert-soft mt-6 text-sm" role="note">
-        <span>
-          Prefer one broad list plus narrow additions. OISD Big already contains
-          OISD Small, and HaGeZi tiers build on each other—do not stack tiers.
-        </span>
-      </div>
-
-      {availablePresets.length > 0 && (
-        <section className="mt-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-base-content/70">
-            Recommended sources
-          </h2>
-          <div className="mt-3 grid gap-4 lg:grid-cols-3">
-            {availablePresets.map((preset) => {
-              const busy = action === `add-${preset.slug}`
-              return (
-                <article
-                  key={preset.slug}
-                  className="card border border-base-300 bg-base-100 shadow-sm"
-                >
-                  <div className="card-body gap-3 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-semibold">{preset.name}</h3>
-                      <span className="badge badge-outline badge-sm">
-                        {preset.license}
-                      </span>
-                    </div>
-                    <p className="text-sm leading-6 text-base-content/70">
-                      {preset.description}
-                    </p>
-                    <div className="mt-auto flex items-center justify-between gap-3">
-                      <a
-                        className="link link-hover text-xs text-base-content/70"
-                        href={preset.homepage}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Maintainer
-                      </a>
-                      <button
-                        className="btn btn-primary btn-sm"
-                        type="button"
-                        disabled={action !== null}
-                        onClick={() => void addPreset(preset)}
-                      >
-                        {busy && (
-                          <span className="loading loading-spinner loading-xs" />
-                        )}
-                        Add source
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      <section className="card mt-8 border border-base-300 bg-base-100 shadow-sm">
+      <section className="card mt-6 border border-base-300 bg-base-100 shadow-sm">
         <div className="flex items-center justify-between border-b border-base-300 px-5 py-4">
           <h2 className="font-semibold">
-            Configured sources
+            Sources
             <span className="ml-2 badge badge-ghost badge-sm">
               {lists.length}
             </span>
@@ -374,17 +269,16 @@ export function BlocklistsPage() {
         </div>
 
         {loading ? (
-          <LoadingPanel label="Loading configured blocklists" />
+          <LoadingPanel label="Loading blocklists" />
         ) : lists.length === 0 ? (
           <EmptyState
             title="No blocklists configured"
-            description="Add a recommended source above or provide a custom HTTPS blocklist URL."
+            description="Add a hosts-style or plain-domain list URL below."
           />
         ) : (
           <div className="space-y-3 p-4">
             {lists.map((list) => {
               const refreshing = action === `refresh-${list.id}`
-              const toggling = action === `toggle-${list.id}`
               return (
                 <article
                   key={list.id}
@@ -401,24 +295,9 @@ export function BlocklistsPage() {
                         >
                           {list.enabled ? 'Enabled' : 'Disabled'}
                         </span>
-                        {list.format && (
-                          <span className="badge badge-outline badge-sm">
-                            {list.format}
-                          </span>
-                        )}
-                        {list.license && list.homepage && (
-                          <a
-                            className="link link-hover text-xs text-base-content/70"
-                            href={list.homepage}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {list.license}
-                          </a>
-                        )}
                       </div>
                       <a
-                        className="mt-1 block truncate font-mono text-xs text-base-content/70 hover:text-base-content/70"
+                        className="mt-1 block truncate font-mono text-xs text-base-content/70 hover:text-base-content"
                         href={list.url}
                         target="_blank"
                         rel="noreferrer"
@@ -433,7 +312,7 @@ export function BlocklistsPage() {
                         disabled={action !== null}
                         onClick={() => void toggleList(list)}
                       >
-                        {toggling && (
+                        {action === `toggle-${list.id}` && (
                           <span className="loading loading-spinner loading-xs" />
                         )}
                         {list.enabled ? 'Disable' : 'Enable'}
@@ -460,7 +339,7 @@ export function BlocklistsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 border-t border-base-300/70 pt-3 text-xs sm:grid-cols-3">
+                  <div className="mt-4 grid gap-3 border-t border-base-300/70 pt-3 text-xs sm:grid-cols-2">
                     <Metadata
                       label="Domains"
                       value={formatNumber(list.domain_count)}
@@ -473,24 +352,7 @@ export function BlocklistsPage() {
                           : 'Never'
                       }
                     />
-                    <Metadata
-                      label="Last checked"
-                      value={
-                        list.last_checked_at
-                          ? formatDateTime(list.last_checked_at)
-                          : 'Never'
-                      }
-                    />
                   </div>
-
-                  {list.last_error && (
-                    <div
-                      className="alert alert-error alert-soft mt-3 py-2 text-xs"
-                      role="alert"
-                    >
-                      <span>{list.last_error}</span>
-                    </div>
-                  )}
                 </article>
               )
             })}
@@ -498,15 +360,18 @@ export function BlocklistsPage() {
         )}
       </section>
 
-      <details className="collapse-arrow collapse mt-6 border border-base-300 bg-base-100">
-        <summary className="collapse-title font-semibold">
-          Add a custom HTTPS source
-        </summary>
-        <form
-          className="collapse-content"
-          onSubmit={(event) => void addCustom(event)}
-        >
-          <div className="grid gap-4 pt-2 md:grid-cols-2">
+      <form
+        className="card mt-6 border border-base-300 bg-base-100 shadow-sm"
+        onSubmit={(event) => void addCustom(event)}
+      >
+        <div className="card-body">
+          <div>
+            <h2 className="card-title text-lg">Add a source</h2>
+            <p className="mt-1 text-sm text-base-content/70">
+              The URL must use HTTPS and contain hosts-style or plain domains.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <label className="form-control">
               <span className="label-text mb-1.5 text-xs">Name</span>
               <input
@@ -538,54 +403,21 @@ export function BlocklistsPage() {
                 }
               />
             </label>
-            <label className="form-control">
-              <span className="label-text mb-1.5 text-xs">
-                License (optional)
-              </span>
-              <input
-                className="input input-bordered w-full"
-                placeholder="MIT"
-                value={form.license}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    license: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="form-control">
-              <span className="label-text mb-1.5 text-xs">
-                Homepage (optional)
-              </span>
-              <input
-                className="input input-bordered w-full"
-                type="url"
-                placeholder="https://github.com/owner/list"
-                value={form.homepage}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    homepage: event.target.value,
-                  }))
-                }
-              />
-            </label>
           </div>
-          <div className="mt-4 flex justify-end">
+          <div className="mt-2 flex justify-end">
             <button
               className="btn btn-primary btn-sm"
               type="submit"
               disabled={action !== null}
             >
-              {action === 'add-custom' && (
+              {action === 'add' && (
                 <span className="loading loading-spinner loading-xs" />
               )}
               Add and download
             </button>
           </div>
-        </form>
-      </details>
+        </div>
+      </form>
 
       {deleteTarget && (
         <div

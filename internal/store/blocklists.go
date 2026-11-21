@@ -15,9 +15,8 @@ import (
 // ListBlocklists returns all configured sources, including disabled ones.
 func (s *Store) ListBlocklists(ctx context.Context) ([]blocklists.List, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, url, enabled, format, license, homepage,
-		       etag, last_modified, last_checked_at, last_updated_at,
-		       last_error, domain_count, created_at, updated_at
+		SELECT id, name, url, enabled, last_updated_at,
+		       domain_count, created_at, updated_at
 		FROM blocklists
 		ORDER BY name, id
 	`)
@@ -43,9 +42,8 @@ func (s *Store) ListBlocklists(ctx context.Context) ([]blocklists.List, error) {
 // GetBlocklist returns one configured source.
 func (s *Store) GetBlocklist(ctx context.Context, id int64) (blocklists.List, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, url, enabled, format, license, homepage,
-		       etag, last_modified, last_checked_at, last_updated_at,
-		       last_error, domain_count, created_at, updated_at
+		SELECT id, name, url, enabled, last_updated_at,
+		       domain_count, created_at, updated_at
 		FROM blocklists
 		WHERE id = ?
 	`, id)
@@ -60,12 +58,9 @@ func (s *Store) GetBlocklist(ctx context.Context, id int64) (blocklists.List, er
 func (s *Store) CreateBlocklist(ctx context.Context, input blocklists.Input) (blocklists.List, error) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO blocklists (
-			name, url, enabled, license, homepage, created_at, updated_at
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, input.Name, input.URL, input.Enabled, input.License, input.Homepage,
-		now.UnixMilli(), now.UnixMilli())
+		INSERT INTO blocklists (name, url, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, input.Name, input.URL, input.Enabled, now.UnixMilli(), now.UnixMilli())
 	if err != nil {
 		return blocklists.List{}, translateBlocklistError("create blocklist", err)
 	}
@@ -76,19 +71,13 @@ func (s *Store) CreateBlocklist(ctx context.Context, input blocklists.Input) (bl
 	return s.GetBlocklist(ctx, id)
 }
 
-// UpdateBlocklist replaces editable metadata. Changing the URL clears HTTP
-// validators so the next refresh performs a full download.
+// UpdateBlocklist replaces editable metadata.
 func (s *Store) UpdateBlocklist(ctx context.Context, id int64, input blocklists.Input) (blocklists.List, error) {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE blocklists
-		SET name = ?, url = ?, enabled = ?, license = ?, homepage = ?,
-		    etag = CASE WHEN url = ? THEN etag ELSE '' END,
-		    last_modified = CASE WHEN url = ? THEN last_modified ELSE '' END,
-		    last_error = CASE WHEN url = ? THEN last_error ELSE '' END,
-		    updated_at = ?
+		SET name = ?, url = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
-	`, input.Name, input.URL, input.Enabled, input.License, input.Homepage,
-		input.URL, input.URL, input.URL, time.Now().UTC().UnixMilli(), id)
+	`, input.Name, input.URL, input.Enabled, time.Now().UTC().UnixMilli(), id)
 	if err != nil {
 		return blocklists.List{}, translateBlocklistError("update blocklist", err)
 	}
@@ -118,15 +107,8 @@ func (s *Store) DeleteBlocklist(ctx context.Context, id int64) error {
 	return nil
 }
 
-// ReplaceBlocklistDomains atomically swaps one source's domain snapshot and
-// records a successful fetch.
-func (s *Store) ReplaceBlocklistDomains(
-	ctx context.Context,
-	id int64,
-	parsed blocklists.ParseResult,
-	etag, lastModified string,
-	checkedAt time.Time,
-) (blocklists.List, error) {
+// ReplaceBlocklistDomains replaces one source's domain snapshot.
+func (s *Store) ReplaceBlocklistDomains(ctx context.Context, id int64, domains []string, checkedAt time.Time) (blocklists.List, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return blocklists.List{}, fmt.Errorf("begin blocklist replacement: %w", err)
@@ -146,7 +128,7 @@ func (s *Store) ReplaceBlocklistDomains(
 	if err != nil {
 		return blocklists.List{}, fmt.Errorf("prepare blocklist domain insert: %w", err)
 	}
-	for _, domain := range parsed.Domains {
+	for _, domain := range domains {
 		if _, err := statement.ExecContext(ctx, domain, id); err != nil {
 			statement.Close()
 			return blocklists.List{}, fmt.Errorf("insert blocklist domain: %w", err)
@@ -166,12 +148,9 @@ func (s *Store) ReplaceBlocklistDomains(
 	now := time.Now().UTC()
 	result, err := tx.ExecContext(ctx, `
 		UPDATE blocklists
-		SET format = ?, etag = ?, last_modified = ?,
-		    last_checked_at = ?, last_updated_at = ?, last_error = '',
-		    domain_count = ?, updated_at = ?
+		SET last_updated_at = ?, domain_count = ?, updated_at = ?
 		WHERE id = ?
-	`, parsed.Format, etag, lastModified, checkedAt.UTC().UnixMilli(),
-		now.UnixMilli(), domainCount, now.UnixMilli(), id)
+	`, checkedAt.UTC().UnixMilli(), domainCount, now.UnixMilli(), id)
 	if err != nil {
 		return blocklists.List{}, fmt.Errorf("update refreshed blocklist: %w", err)
 	}
@@ -184,51 +163,6 @@ func (s *Store) ReplaceBlocklistDomains(
 	}
 	if err := tx.Commit(); err != nil {
 		return blocklists.List{}, fmt.Errorf("commit blocklist replacement: %w", err)
-	}
-	return s.GetBlocklist(ctx, id)
-}
-
-// RecordBlocklistError records a failed attempt without changing the active
-// domain snapshot.
-func (s *Store) RecordBlocklistError(ctx context.Context, id int64, message string, checkedAt time.Time) (blocklists.List, error) {
-	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE blocklists
-		SET last_checked_at = ?, last_error = ?, updated_at = ?
-		WHERE id = ?
-	`, checkedAt.UTC().UnixMilli(), message, now.UnixMilli(), id)
-	if err != nil {
-		return blocklists.List{}, fmt.Errorf("record blocklist error: %w", err)
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return blocklists.List{}, fmt.Errorf("read blocklist error update count: %w", err)
-	}
-	if affected == 0 {
-		return blocklists.List{}, blocklists.ErrNotFound
-	}
-	return s.GetBlocklist(ctx, id)
-}
-
-// RecordBlocklistUnchanged records a successful conditional request while
-// preserving the existing domain snapshot and last-success timestamp.
-func (s *Store) RecordBlocklistUnchanged(ctx context.Context, id int64, etag, lastModified string, checkedAt time.Time) (blocklists.List, error) {
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE blocklists
-		SET etag = ?, last_modified = ?, last_checked_at = ?,
-		    last_error = '', updated_at = ?
-		WHERE id = ?
-	`, etag, lastModified, checkedAt.UTC().UnixMilli(),
-		time.Now().UTC().UnixMilli(), id)
-	if err != nil {
-		return blocklists.List{}, fmt.Errorf("record unchanged blocklist: %w", err)
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return blocklists.List{}, fmt.Errorf("read unchanged blocklist count: %w", err)
-	}
-	if affected == 0 {
-		return blocklists.List{}, blocklists.ErrNotFound
 	}
 	return s.GetBlocklist(ctx, id)
 }
@@ -269,7 +203,6 @@ func scanBlocklist(row blocklistScanner) (blocklists.List, error) {
 	var (
 		list        blocklists.List
 		enabled     int
-		checkedAt   sql.NullInt64
 		lastUpdated sql.NullInt64
 		createdAt   int64
 		updatedAt   int64
@@ -279,14 +212,7 @@ func scanBlocklist(row blocklistScanner) (blocklists.List, error) {
 		&list.Name,
 		&list.URL,
 		&enabled,
-		&list.Format,
-		&list.License,
-		&list.Homepage,
-		&list.ETag,
-		&list.LastModified,
-		&checkedAt,
 		&lastUpdated,
-		&list.LastError,
 		&list.DomainCount,
 		&createdAt,
 		&updatedAt,
@@ -295,10 +221,6 @@ func scanBlocklist(row blocklistScanner) (blocklists.List, error) {
 	}
 
 	list.Enabled = enabled == 1
-	if checkedAt.Valid {
-		value := time.UnixMilli(checkedAt.Int64).UTC()
-		list.LastCheckedAt = &value
-	}
 	if lastUpdated.Valid {
 		value := time.UnixMilli(lastUpdated.Int64).UTC()
 		list.LastUpdatedAt = &value

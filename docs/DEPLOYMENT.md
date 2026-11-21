@@ -190,7 +190,7 @@ Migrations run automatically at startup. Never delete `/data` to troubleshoot an
 | Container restarts | `docker compose logs --tail=100 sinkhole` |
 | Port 53 unavailable | `sudo ss -lntup \| grep ':53 '` and `docker ps` |
 | DNS resolves but dashboard is empty | Wait for the 500 ms query-log flush and enable polling |
-| Blocklist has zero domains | Inspect the list's `last_error`; use **Refresh** and check container logs |
+| Blocklist has zero domains | Use **Refresh** and check container logs for the download or parse error |
 | All clients show one IP | Review Docker bridge/source NAT and the host-network option above |
 | Blocking broke a site | Add an allow rule for the exact domain, then refresh the Query Log |
 | Pi-hole web port conflicts | Choose a different `SINKHOLE_WEB_PORT` |

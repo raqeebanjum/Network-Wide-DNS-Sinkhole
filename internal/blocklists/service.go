@@ -21,12 +21,10 @@ type Store interface {
 	CreateBlocklist(ctx context.Context, input Input) (List, error)
 	UpdateBlocklist(ctx context.Context, id int64, input Input) (List, error)
 	DeleteBlocklist(ctx context.Context, id int64) error
-	ReplaceBlocklistDomains(ctx context.Context, id int64, parsed ParseResult, etag, lastModified string, checkedAt time.Time) (List, error)
-	RecordBlocklistError(ctx context.Context, id int64, message string, checkedAt time.Time) (List, error)
-	RecordBlocklistUnchanged(ctx context.Context, id int64, etag, lastModified string, checkedAt time.Time) (List, error)
+	ReplaceBlocklistDomains(ctx context.Context, id int64, domains []string, checkedAt time.Time) (List, error)
 }
 
-// PolicyReloader atomically rebuilds the DNS rule snapshot.
+// PolicyReloader rebuilds the DNS rule snapshot.
 type PolicyReloader interface {
 	Reload(ctx context.Context) error
 }
@@ -73,11 +71,6 @@ func NewService(store Store, fetcher Fetcher, policy PolicyReloader, refreshInte
 	}, nil
 }
 
-// Presets returns curated sources for the UI.
-func (s *Service) Presets() []Preset {
-	return Presets()
-}
-
 // List returns all configured sources.
 func (s *Service) List(ctx context.Context) ([]List, error) {
 	return s.store.ListBlocklists(ctx)
@@ -119,8 +112,8 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Refresh downloads and atomically activates one source. A failed download or
-// parse records an error but leaves the previous domain snapshot active.
+// Refresh downloads and activates one source. Failed downloads leave the
+// previous active domains untouched.
 func (s *Service) Refresh(ctx context.Context, id int64) (List, error) {
 	s.wg.Add(1)
 	defer s.wg.Done()
@@ -135,36 +128,22 @@ func (s *Service) Refresh(ctx context.Context, id int64) (List, error) {
 		return List{}, err
 	}
 
-	checkedAt := time.Now().UTC()
-	result, err := s.fetcher.Fetch(ctx, list.URL, list.ETag, list.LastModified)
+	body, err := s.fetcher.Fetch(ctx, list.URL)
 	if err != nil {
 		if ctx.Err() != nil {
 			return list, ctx.Err()
 		}
-		failed := s.recordFailure(ctx, list, err, checkedAt)
-		return failed, fmt.Errorf("%w: %v", ErrRefresh, err)
+		s.logger.Warn("blocklist download failed", "name", list.Name, "error", err)
+		return list, fmt.Errorf("%w: %v", ErrRefresh, err)
 	}
 
-	if result.NotModified {
-		updated, err := s.store.RecordBlocklistUnchanged(ctx, id, result.ETag, result.LastModified, checkedAt)
-		if err != nil {
-			return list, err
-		}
-		if err := s.reloadPolicy(ctx); err != nil {
-			return updated, fmt.Errorf("%w: activate unchanged list: %v", ErrRefresh, err)
-		}
-		return updated, nil
-	}
-
-	parsed, err := Parse(result.Body)
+	domains, err := Parse(body)
 	if err != nil {
-		failed := s.recordFailure(ctx, list, err, checkedAt)
-		return failed, fmt.Errorf("%w: %v", ErrRefresh, err)
+		s.logger.Warn("blocklist parse failed", "name", list.Name, "error", err)
+		return list, fmt.Errorf("%w: %v", ErrRefresh, err)
 	}
 
-	updated, err := s.store.ReplaceBlocklistDomains(
-		ctx, id, parsed, result.ETag, result.LastModified, checkedAt,
-	)
+	updated, err := s.store.ReplaceBlocklistDomains(ctx, id, domains, time.Now().UTC())
 	if err != nil {
 		return list, err
 	}
@@ -172,12 +151,7 @@ func (s *Service) Refresh(ctx context.Context, id int64) (List, error) {
 		return updated, fmt.Errorf("%w: activate downloaded list: %v", ErrRefresh, err)
 	}
 
-	s.logger.Info("blocklist refreshed",
-		"name", updated.Name,
-		"domains", updated.DomainCount,
-		"ignored", parsed.Ignored,
-		"format", updated.Format,
-	)
+	s.logger.Info("blocklist refreshed", "name", updated.Name, "domains", updated.DomainCount)
 	return updated, nil
 }
 
@@ -226,7 +200,7 @@ func (s *Service) Start(ctx context.Context) {
 	})
 }
 
-// Wait blocks until the periodic refresh loop stops or ctx expires.
+// Wait blocks until refresh work stops or ctx expires.
 func (s *Service) Wait(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -255,7 +229,7 @@ func (s *Service) refreshDue(ctx context.Context) {
 		if !list.Enabled {
 			continue
 		}
-		if list.LastCheckedAt != nil && now.Sub(*list.LastCheckedAt) < s.refreshInterval {
+		if list.LastUpdatedAt != nil && now.Sub(*list.LastUpdatedAt) < s.refreshInterval {
 			continue
 		}
 		if _, err := s.Refresh(ctx, list.ID); err != nil && ctx.Err() == nil {
@@ -289,17 +263,6 @@ func (s *Service) reloadPolicy(ctx context.Context) error {
 	return s.policy.Reload(reloadCtx)
 }
 
-func (s *Service) recordFailure(ctx context.Context, list List, fetchErr error, checkedAt time.Time) List {
-	message := truncate(fetchErr.Error(), 1000)
-	updated, err := s.store.RecordBlocklistError(ctx, list.ID, message, checkedAt)
-	if err != nil {
-		s.logger.Error("record blocklist refresh failure", "name", list.Name, "error", err)
-		return list
-	}
-	s.logger.Warn("blocklist refresh failed", "name", list.Name, "error", message)
-	return updated
-}
-
 func normalizeInput(input Input) (Input, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" || utf8.RuneCountInString(name) > 100 {
@@ -309,27 +272,5 @@ func normalizeInput(input Input) (Input, error) {
 	if err != nil {
 		return Input{}, err
 	}
-	homepage, err := normalizeHomepage(input.Homepage)
-	if err != nil {
-		return Input{}, err
-	}
-	license := strings.TrimSpace(input.License)
-	if utf8.RuneCountInString(license) > 100 {
-		return Input{}, fmt.Errorf("%w: license must not exceed 100 characters", ErrInvalid)
-	}
-
-	return Input{
-		Name:     name,
-		URL:      address,
-		Enabled:  input.Enabled,
-		License:  license,
-		Homepage: homepage,
-	}, nil
-}
-
-func truncate(value string, limit int) string {
-	if len(value) <= limit {
-		return value
-	}
-	return value[:limit]
+	return Input{Name: name, URL: address, Enabled: input.Enabled}, nil
 }

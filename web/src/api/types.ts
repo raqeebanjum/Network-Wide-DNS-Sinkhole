@@ -80,12 +80,7 @@ export interface BlocklistEntry {
   name: string
   url: string
   enabled: boolean
-  format: string
-  license: string
-  homepage: string
-  last_checked_at: string | null
   last_updated_at: string | null
-  last_error: string
   domain_count: number
   created_at: string
   updated_at: string
@@ -95,25 +90,10 @@ export interface BlocklistsResponse {
   blocklists: BlocklistEntry[]
 }
 
-export interface BlocklistPreset {
-  slug: string
-  name: string
-  url: string
-  license: string
-  homepage: string
-  description: string
-}
-
-export interface BlocklistPresetsResponse {
-  presets: BlocklistPreset[]
-}
-
 export interface BlocklistInput {
   name: string
   url: string
   enabled: boolean
-  license?: string
-  homepage?: string
 }
 
 export interface RefreshAllResponse {
