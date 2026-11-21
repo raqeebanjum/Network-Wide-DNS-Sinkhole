@@ -1,7 +1,23 @@
 import { useEffect, useState } from 'react'
-import { fetchHealth } from './api/health'
+import { fetchHealth } from './api/dashboard'
+import { OverviewPage } from './pages/OverviewPage'
+import { QueriesPage } from './pages/QueriesPage'
+import { RulesPage } from './pages/RulesPage'
+import { SystemLogsPage } from './pages/SystemLogsPage'
 
+type View = 'overview' | 'queries' | 'rules' | 'system'
 type BackendStatus = 'checking' | 'online' | 'offline'
+
+const navigation: Array<{
+  id: View
+  label: string
+  description: string
+}> = [
+  { id: 'overview', label: 'Overview', description: 'Traffic summary' },
+  { id: 'queries', label: 'Query Log', description: 'Request history' },
+  { id: 'rules', label: 'Rules', description: 'Allow and deny' },
+  { id: 'system', label: 'System Log', description: 'Service health' },
+]
 
 const statusDetails: Record<
   BackendStatus,
@@ -24,56 +40,34 @@ const statusDetails: Record<
   },
 }
 
-const milestones = [
-  {
-    phase: 'Phase 0',
-    title: 'Foundation',
-    description: 'Project structure, configuration, and test harness.',
-    state: 'Complete',
-  },
-  {
-    phase: 'Phase 1',
-    title: 'DNS forwarding',
-    description: 'UDP and TCP resolver forwarding to upstream servers.',
-    state: 'Complete',
-  },
-  {
-    phase: 'Phase 2',
-    title: 'Rules and storage',
-    description: 'SQLite persistence, allow/deny rules, and blocking.',
-    state: 'Complete',
-  },
-  {
-    phase: 'Phase 3',
-    title: 'Query visibility',
-    description: 'Durable query logs, statistics, and system logs.',
-    state: 'Current',
-  },
-  {
-    phase: 'Phase 4',
-    title: 'Dashboard',
-    description: 'Interactive query history, statistics, and rule controls.',
-    state: 'Next',
-  },
-]
-
 function App() {
+  const view = useHashView()
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking')
 
   useEffect(() => {
+    let active = true
     const controller = new AbortController()
 
-    fetchHealth(controller.signal)
-      .then((health) => {
-        setBackendStatus(health.status === 'ok' ? 'online' : 'offline')
-      })
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+    async function check() {
+      try {
+        const health = await fetchHealth(controller.signal)
+        if (active) {
+          setBackendStatus(health.status === 'ok' ? 'online' : 'offline')
+        }
+      } catch {
+        if (active && !controller.signal.aborted) {
           setBackendStatus('offline')
         }
-      })
+      }
+    }
 
-    return () => controller.abort()
+    void check()
+    const interval = window.setInterval(() => void check(), 10000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      controller.abort()
+    }
   }, [])
 
   const status = statusDetails[backendStatus]
@@ -82,42 +76,52 @@ function App() {
     <div className="min-h-screen bg-base-200">
       <header className="border-b border-base-300 bg-base-100">
         <nav
-          className="navbar mx-auto max-w-6xl px-4 sm:px-6"
+          className="navbar mx-auto min-h-16 max-w-7xl px-4 sm:px-6"
           aria-label="Main navigation"
         >
           <div className="navbar-start gap-3">
-            <div
-              className="grid size-10 place-items-center rounded-xl bg-primary text-primary-content"
-              aria-hidden="true"
+            <a
+              href="#/overview"
+              className="flex items-center gap-3 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                className="size-6"
+              <div
+                className="grid size-10 place-items-center rounded-xl bg-primary text-primary-content"
+                aria-hidden="true"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 3 5 6v5c0 4.4 2.8 8.3 7 10 4.2-1.7 7-5.6 7-10V6l-7-3Z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="m9 12 2 2 4-5"
-                />
-              </svg>
-            </div>
-            <div>
-              <p className="text-base font-semibold leading-tight">Sinkhole</p>
-              <p className="text-xs text-base-content/60">
-                Network-wide DNS control
-              </p>
-            </div>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  className="size-6"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 3 5 6v5c0 4.4 2.8 8.3 7 10 4.2-1.7 7-5.6 7-10V6l-7-3Z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="m9 12 2 2 4-5"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="text-base font-semibold leading-tight">
+                  Sinkhole
+                </p>
+                <p className="text-xs text-base-content/55">
+                  Network-wide DNS control
+                </p>
+              </div>
+            </a>
           </div>
 
-          <div className="navbar-end">
+          <div className="navbar-end gap-2">
+            <span className="badge badge-outline badge-sm hidden md:inline-flex">
+              Phase 4 · Dashboard
+            </span>
             <div
               className={`badge gap-2 ${status.badge}`}
               role="status"
@@ -131,130 +135,152 @@ function App() {
             </div>
           </div>
         </nav>
+
+        <div className="border-t border-base-300/70">
+          <nav
+            className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-3 sm:px-5"
+            aria-label="Dashboard sections"
+          >
+            {navigation.map((item) => {
+              const active = view === item.id
+              return (
+                <a
+                  key={item.id}
+                  href={`#/${item.id}`}
+                  aria-current={active ? 'page' : undefined}
+                  title={item.description}
+                  className={`group relative flex min-w-fit items-center gap-2 px-3 py-3 text-sm transition-colors ${
+                    active
+                      ? 'text-primary'
+                      : 'text-base-content/55 hover:text-base-content'
+                  }`}
+                >
+                  <NavIcon view={item.id} />
+                  <span>{item.label}</span>
+                  <span
+                    className={`absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary transition-opacity ${
+                      active ? 'opacity-100' : 'opacity-0'
+                    }`}
+                    aria-hidden="true"
+                  />
+                </a>
+              )
+            })}
+          </nav>
+        </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-        <section className="max-w-3xl">
-          <div className="badge badge-outline badge-primary">
-            Phase 3 · Query visibility
-          </div>
-          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-base-content sm:text-5xl">
-            A cleaner network starts at DNS.
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-base-content/70">
-            The resolver records durable query history, aggregate statistics,
-            and recent operational events. The interactive dashboard views
-            arrive in the next slice.
-          </p>
-        </section>
-
-        {backendStatus === 'offline' && (
-          <div className="alert alert-error mt-8" role="alert">
-            <span>
-              The web UI cannot reach the Go API. Start the backend on port 8080
-              and try again.
-            </span>
-          </div>
-        )}
-
-        <div className="mt-10 grid gap-6 lg:grid-cols-3">
-          <section className="card border border-base-300 bg-base-100 shadow-sm lg:col-span-2">
-            <div className="card-body">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="card-title">Build roadmap</h2>
-                  <p className="mt-1 text-sm text-base-content/60">
-                    Query APIs are live; the dashboard views come next.
-                  </p>
-                </div>
-                <div className="badge badge-soft badge-success">On track</div>
-              </div>
-
-              <ul className="mt-4 space-y-3">
-                {milestones.map((milestone) => (
-                  <li
-                    key={milestone.phase}
-                    className="flex gap-4 rounded-box border border-base-300 bg-base-200/50 p-4"
-                  >
-                    <div className="min-w-20 text-xs font-medium uppercase tracking-wide text-base-content/50">
-                      {milestone.phase}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-medium">{milestone.title}</h3>
-                        <span
-                          className={`badge badge-xs ${
-                            milestone.state === 'Current'
-                              ? 'badge-primary'
-                              : milestone.state === 'Complete'
-                                ? 'badge-success'
-                                : milestone.state === 'Next'
-                                  ? 'badge-outline badge-primary'
-                                  : 'badge-ghost'
-                          }`}
-                        >
-                          {milestone.state}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-base-content/60">
-                        {milestone.description}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-
-          <aside className="card border border-base-300 bg-base-100 shadow-sm">
-            <div className="card-body">
-              <h2 className="card-title">Local endpoints</h2>
-              <div className="mt-2 space-y-4">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-base-content/50">
-                    Dashboard
-                  </p>
-                  <a
-                    className="link link-hover font-mono text-sm"
-                    href="http://localhost:5173"
-                  >
-                    localhost:5173
-                  </a>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-base-content/50">
-                    API health
-                  </p>
-                  <a
-                    className="link link-hover font-mono text-sm"
-                    href="/api/health"
-                  >
-                    /api/health
-                  </a>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-base-content/50">
-                    DNS development port
-                  </p>
-                  <code className="font-mono text-sm">1053</code>
-                </div>
-              </div>
-              <div className="divider my-1" />
-              <p className="text-sm leading-6 text-base-content/60">
-                Configure the service with the <code>SINKHOLE_*</code>{' '}
-                environment variables documented in the repository README.
-              </p>
-            </div>
-          </aside>
-        </div>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
+        {view === 'overview' && <OverviewPage />}
+        {view === 'queries' && <QueriesPage />}
+        {view === 'rules' && <RulesPage />}
+        {view === 'system' && <SystemLogsPage />}
       </main>
 
-      <footer className="border-t border-base-300 py-6">
-        <p className="text-center text-xs text-base-content/50">
-          Network-Wide DNS Sinkhole · local-first DNS filtering
-        </p>
+      <footer className="mt-10 border-t border-base-300 py-6">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-base-content/45 sm:flex-row sm:px-6">
+          <p>Network-Wide DNS Sinkhole · local-first DNS filtering</p>
+          <p>Queries refresh every 5 seconds.</p>
+        </div>
       </footer>
     </div>
+  )
+}
+
+function useHashView(): View {
+  const [view, setView] = useState<View>(readView)
+
+  useEffect(() => {
+    function handleHashChange() {
+      setView(readView())
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
+  return view
+}
+
+function readView(): View {
+  const candidate = window.location.hash.replace(/^#\/?/, '')
+  if (
+    candidate === 'queries' ||
+    candidate === 'rules' ||
+    candidate === 'system'
+  ) {
+    return candidate
+  }
+  return 'overview'
+}
+
+function NavIcon({ view }: { view: View }) {
+  const className = 'size-4 shrink-0'
+
+  if (view === 'queries') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        className={className}
+        aria-hidden="true"
+      >
+        <path strokeLinecap="round" d="M8 6h12M8 12h12M8 18h8" />
+        <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" />
+        <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" />
+        <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    )
+  }
+
+  if (view === 'rules') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        className={className}
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 3 5 6v5c0 4.4 2.8 8.3 7 10 4.2-1.7 7-5.6 7-10V6l-7-3Z"
+        />
+        <path strokeLinecap="round" d="M9 12h6" />
+      </svg>
+    )
+  }
+
+  if (view === 'system') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        className={className}
+        aria-hidden="true"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path strokeLinecap="round" d="m7 9 3 3-3 3M13 15h4" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      className={className}
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" d="M4 19V9M10 19V5M16 19v-7M22 19H2" />
+    </svg>
   )
 }
 
