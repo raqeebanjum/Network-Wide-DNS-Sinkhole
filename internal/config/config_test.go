@@ -27,6 +27,12 @@ func TestLoadDefaults(t *testing.T) {
 	if got, want := strings.Join(cfg.Upstreams, ","), "1.1.1.1:53,1.0.0.1:53"; got != want {
 		t.Errorf("Upstreams = %q, want %q", got, want)
 	}
+	if cfg.DNSRequestTimeout != 5*time.Second {
+		t.Errorf("DNSRequestTimeout = %s, want 5s", cfg.DNSRequestTimeout)
+	}
+	if cfg.DNSMaxInflight != 256 {
+		t.Errorf("DNSMaxInflight = %d, want 256", cfg.DNSMaxInflight)
+	}
 	if cfg.QueryRetention != 30*24*time.Hour {
 		t.Errorf("QueryRetention = %s, want 720h", cfg.QueryRetention)
 	}
@@ -49,6 +55,8 @@ func TestLoadOverrides(t *testing.T) {
 		"SINKHOLE_HTTP_LISTEN":       "localhost:9090",
 		"SINKHOLE_DATA_DIR":          "/tmp/sinkhole-test",
 		"SINKHOLE_UPSTREAMS":         "9.9.9.9:53, [2620:fe::fe]:53",
+		"SINKHOLE_DNS_TIMEOUT":       "750ms",
+		"SINKHOLE_DNS_MAX_INFLIGHT":  "64",
 		"SINKHOLE_QUERY_RETENTION":   "168h",
 		"SINKHOLE_BLOCKLIST_REFRESH": "6h30m",
 		"SINKHOLE_LOG_LEVEL":         "debug",
@@ -69,6 +77,12 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if got, want := strings.Join(cfg.Upstreams, ","), "9.9.9.9:53,[2620:fe::fe]:53"; got != want {
 		t.Errorf("Upstreams = %q, want %q", got, want)
+	}
+	if cfg.DNSRequestTimeout != 750*time.Millisecond {
+		t.Errorf("DNSRequestTimeout = %s, want 750ms", cfg.DNSRequestTimeout)
+	}
+	if cfg.DNSMaxInflight != 64 {
+		t.Errorf("DNSMaxInflight = %d, want 64", cfg.DNSMaxInflight)
 	}
 	if cfg.QueryRetention != 7*24*time.Hour {
 		t.Errorf("QueryRetention = %s, want 168h", cfg.QueryRetention)
@@ -121,6 +135,21 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 			name: "duplicate upstream",
 			env:  map[string]string{"SINKHOLE_UPSTREAMS": "1.1.1.1:53,1.1.1.1:53"},
 			want: "more than once",
+		},
+		{
+			name: "invalid DNS timeout",
+			env:  map[string]string{"SINKHOLE_DNS_TIMEOUT": "five seconds"},
+			want: "SINKHOLE_DNS_TIMEOUT",
+		},
+		{
+			name: "non-positive DNS concurrency",
+			env:  map[string]string{"SINKHOLE_DNS_MAX_INFLIGHT": "0"},
+			want: "greater than zero",
+		},
+		{
+			name: "invalid DNS concurrency",
+			env:  map[string]string{"SINKHOLE_DNS_MAX_INFLIGHT": "many"},
+			want: "integer",
 		},
 		{
 			name: "invalid retention",

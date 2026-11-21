@@ -12,6 +12,7 @@ import (
 
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/api"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/config"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/dnsserver"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/logging"
 )
 
@@ -39,7 +40,25 @@ func run() error {
 		return fmt.Errorf("create data directory %q: %w", cfg.DataDir, err)
 	}
 
-	server := &http.Server{
+	dnsService, err := dnsserver.New(dnsserver.Config{
+		Listen:         cfg.DNSListen,
+		Upstreams:      cfg.Upstreams,
+		RequestTimeout: cfg.DNSRequestTimeout,
+		MaxInflight:    cfg.DNSMaxInflight,
+		Logger:         logger,
+	})
+	if err != nil {
+		return fmt.Errorf("create DNS server: %w", err)
+	}
+	if err := dnsService.Start(); err != nil {
+		return fmt.Errorf("start DNS server: %w", err)
+	}
+	logger.Info("DNS server listening",
+		"address", dnsService.Address(),
+		"upstreams", cfg.Upstreams,
+	)
+
+	httpServer := &http.Server{
 		Addr:              cfg.HTTPListen,
 		Handler:           api.NewHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -49,18 +68,22 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	serverErrors := make(chan error, 1)
+	httpErrors := make(chan error, 1)
 	go func() {
 		logger.Info("HTTP server listening", "address", cfg.HTTPListen)
-		serverErrors <- server.ListenAndServe()
+		httpErrors <- httpServer.ListenAndServe()
 	}()
 
+	var serveErr error
 	select {
-	case err := <-serverErrors:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	case serveErr = <-httpErrors:
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		} else {
+			serveErr = fmt.Errorf("serve HTTP: %w", serveErr)
 		}
-		return fmt.Errorf("serve HTTP: %w", err)
+	case serveErr = <-dnsService.Errors():
+		serveErr = fmt.Errorf("serve DNS: %w", serveErr)
 	case <-ctx.Done():
 		logger.Info("shutdown requested")
 	}
@@ -68,11 +91,15 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		_ = server.Close()
-		return fmt.Errorf("shut down HTTP server: %w", err)
+	var shutdownErrors []error
+	if err := dnsService.Shutdown(shutdownCtx); err != nil {
+		shutdownErrors = append(shutdownErrors, fmt.Errorf("shut down DNS server: %w", err))
+	}
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		_ = httpServer.Close()
+		shutdownErrors = append(shutdownErrors, fmt.Errorf("shut down HTTP server: %w", err))
 	}
 
 	logger.Info("shutdown complete")
-	return nil
+	return errors.Join(serveErr, errors.Join(shutdownErrors...))
 }

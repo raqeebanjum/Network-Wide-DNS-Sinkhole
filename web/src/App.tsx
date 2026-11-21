@@ -29,19 +29,19 @@ const milestones = [
     phase: 'Phase 0',
     title: 'Foundation',
     description: 'Project structure, configuration, and test harness.',
-    state: 'Current',
+    state: 'Complete',
   },
   {
     phase: 'Phase 1',
     title: 'DNS forwarding',
     description: 'UDP and TCP resolver forwarding to upstream servers.',
-    state: 'Next',
+    state: 'Current',
   },
   {
     phase: 'Phase 2',
     title: 'Rules and storage',
     description: 'SQLite persistence, allow/deny rules, and blocking.',
-    state: 'Planned',
+    state: 'Next',
   },
   {
     phase: 'Phase 3',
@@ -130,15 +130,15 @@ function App() {
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
         <section className="max-w-3xl">
           <div className="badge badge-outline badge-primary">
-            Phase 0 · Foundation
+            Phase 1 · DNS forwarding
           </div>
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-base-content sm:text-5xl">
             A cleaner network starts at DNS.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-base-content/70">
-            This is the administration console for a self-hosted DNS sinkhole.
-            The resolver, query log, and blocklist controls will arrive in the
-            next slices.
+            The DNS resolver is forwarding UDP and TCP queries to configured
+            upstream servers. Query logs, filtering rules, and blocklist
+            controls arrive in the next slices.
           </p>
         </section>
 
@@ -158,7 +158,7 @@ function App() {
                 <div>
                   <h2 className="card-title">Build roadmap</h2>
                   <p className="mt-1 text-sm text-base-content/60">
-                    The foundation is ready for the first resolver slice.
+                    DNS forwarding is running; filtering rules are next.
                   </p>
                 </div>
                 <div className="badge badge-soft badge-success">On track</div>
@@ -180,9 +180,11 @@ function App() {
                           className={`badge badge-xs ${
                             milestone.state === 'Current'
                               ? 'badge-primary'
-                              : milestone.state === 'Next'
-                                ? 'badge-outline badge-primary'
-                                : 'badge-ghost'
+                              : milestone.state === 'Complete'
+                                ? 'badge-success'
+                                : milestone.state === 'Next'
+                                  ? 'badge-outline badge-primary'
+                                  : 'badge-ghost'
                           }`}
                         >
                           {milestone.state}

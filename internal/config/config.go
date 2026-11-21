@@ -11,26 +11,30 @@ import (
 )
 
 const (
-	defaultDNSListen        = ":1053"
-	defaultHTTPListen       = ":8080"
-	defaultDataDir          = "./data"
-	defaultUpstreams        = "1.1.1.1:53,1.0.0.1:53"
-	defaultQueryRetention   = 30 * 24 * time.Hour
-	defaultBlocklistRefresh = 24 * time.Hour
-	defaultLogLevel         = "info"
-	defaultLogFormat        = "text"
+	defaultDNSListen         = ":1053"
+	defaultHTTPListen        = ":8080"
+	defaultDataDir           = "./data"
+	defaultUpstreams         = "1.1.1.1:53,1.0.0.1:53"
+	defaultDNSRequestTimeout = 5 * time.Second
+	defaultDNSMaxInflight    = 256
+	defaultQueryRetention    = 30 * 24 * time.Hour
+	defaultBlocklistRefresh  = 24 * time.Hour
+	defaultLogLevel          = "info"
+	defaultLogFormat         = "text"
 )
 
 // Config contains the runtime settings shared by the DNS and HTTP servers.
 type Config struct {
-	DNSListen        string
-	HTTPListen       string
-	DataDir          string
-	Upstreams        []string
-	QueryRetention   time.Duration
-	BlocklistRefresh time.Duration
-	LogLevel         slog.Level
-	LogFormat        string
+	DNSListen         string
+	HTTPListen        string
+	DataDir           string
+	Upstreams         []string
+	DNSRequestTimeout time.Duration
+	DNSMaxInflight    int
+	QueryRetention    time.Duration
+	BlocklistRefresh  time.Duration
+	LogLevel          slog.Level
+	LogFormat         string
 }
 
 // Load reads configuration from SINKHOLE_* environment variables.
@@ -59,6 +63,16 @@ func load(lookupEnv func(string) (string, bool)) (Config, error) {
 		return Config{}, fmt.Errorf("SINKHOLE_UPSTREAMS: %w", err)
 	}
 
+	dnsRequestTimeout, err := durationValue(lookupEnv, "SINKHOLE_DNS_TIMEOUT", defaultDNSRequestTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+
+	dnsMaxInflight, err := positiveIntValue(lookupEnv, "SINKHOLE_DNS_MAX_INFLIGHT", defaultDNSMaxInflight)
+	if err != nil {
+		return Config{}, err
+	}
+
 	queryRetention, err := durationValue(lookupEnv, "SINKHOLE_QUERY_RETENTION", defaultQueryRetention)
 	if err != nil {
 		return Config{}, err
@@ -80,14 +94,16 @@ func load(lookupEnv func(string) (string, bool)) (Config, error) {
 	}
 
 	return Config{
-		DNSListen:        dnsListen,
-		HTTPListen:       httpListen,
-		DataDir:          dataDir,
-		Upstreams:        upstreams,
-		QueryRetention:   queryRetention,
-		BlocklistRefresh: blocklistRefresh,
-		LogLevel:         logLevel,
-		LogFormat:        logFormat,
+		DNSListen:         dnsListen,
+		HTTPListen:        httpListen,
+		DataDir:           dataDir,
+		Upstreams:         upstreams,
+		DNSRequestTimeout: dnsRequestTimeout,
+		DNSMaxInflight:    dnsMaxInflight,
+		QueryRetention:    queryRetention,
+		BlocklistRefresh:  blocklistRefresh,
+		LogLevel:          logLevel,
+		LogFormat:         logFormat,
 	}, nil
 }
 
@@ -162,6 +178,18 @@ func durationValue(lookupEnv func(string) (string, bool), key string, fallback t
 		return 0, fmt.Errorf("%s must be greater than zero", key)
 	}
 	return duration, nil
+}
+
+func positiveIntValue(lookupEnv func(string) (string, bool), key string, fallback int) (int, error) {
+	raw := value(lookupEnv, key, strconv.Itoa(fallback))
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be greater than zero", key)
+	}
+	return parsed, nil
 }
 
 func parseLogLevel(raw string) (slog.Level, error) {
