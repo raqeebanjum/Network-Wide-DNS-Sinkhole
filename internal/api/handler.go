@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"mime"
 	"net"
 	"net/http"
 	"strconv"
@@ -263,7 +264,18 @@ func NewHandler(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/stats", api.queryStats)
 	mux.HandleFunc("GET /api/system-logs", api.listSystemLogs)
 	mux.HandleFunc("GET /api/logging/stats", api.loggingStats)
-	return mux
+	return securityHeaders(mux)
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, request)
+	})
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -514,6 +526,10 @@ func (h *handler) blocklistError(w http.ResponseWriter, operation string, err er
 }
 
 func decodeBlocklistInput(w http.ResponseWriter, request *http.Request, allowMissingEnabled bool) (blocklists.Input, bool) {
+	if !requireJSONContent(w, request) {
+		return blocklists.Input{}, false
+	}
+
 	var body blocklistRequest
 	if err := decodeJSON(w, request, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -863,6 +879,10 @@ func ruleID(w http.ResponseWriter, request *http.Request) (int64, bool) {
 }
 
 func decodeRuleInput(w http.ResponseWriter, request *http.Request) (rules.Input, bool) {
+	if !requireJSONContent(w, request) {
+		return rules.Input{}, false
+	}
+
 	var body ruleRequest
 	if err := decodeJSON(w, request, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -880,6 +900,15 @@ func decodeRuleInput(w http.ResponseWriter, request *http.Request) (rules.Input,
 		Kind:   kind,
 		Note:   body.Note,
 	}, true
+}
+
+func requireJSONContent(w http.ResponseWriter, request *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return false
+	}
+	return true
 }
 
 func decodeJSON(w http.ResponseWriter, request *http.Request, destination any) error {

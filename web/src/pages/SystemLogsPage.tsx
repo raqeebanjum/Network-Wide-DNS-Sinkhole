@@ -74,14 +74,14 @@ export function SystemLogsPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             System log
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/60">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
             Recent service events and query-writer health. Full operational
             history remains in the container logs.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {updatedAt && (
-            <span className="hidden whitespace-nowrap text-xs text-base-content/45 sm:inline">
+            <span className="hidden whitespace-nowrap text-xs text-base-content/70 sm:inline">
               Updated {updatedAt.toLocaleTimeString()}
             </span>
           )}
@@ -169,7 +169,7 @@ export function SystemLogsPage() {
               <tbody>
                 {logs.map((entry, index) => (
                   <tr key={`${entry.timestamp}-${index}`} className="align-top">
-                    <td className="whitespace-nowrap text-xs text-base-content/55">
+                    <td className="whitespace-nowrap text-xs text-base-content/70">
                       {formatDateTime(entry.timestamp)}
                     </td>
                     <td>
@@ -211,11 +211,11 @@ function HealthCard({
   return (
     <article className="card border border-base-300 bg-base-100 shadow-sm">
       <div className="card-body gap-1 p-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-base-content/50">
+        <p className="text-xs font-medium uppercase tracking-wide text-base-content/70">
           {label}
         </p>
         <p className={`text-xl font-semibold ${valueClass}`}>{value}</p>
-        <p className="text-xs text-base-content/45">{detail}</p>
+        <p className="text-xs text-base-content/70">{detail}</p>
       </div>
     </article>
   )
@@ -228,7 +228,7 @@ function AttributeList({
 }) {
   const entries = Object.entries(attributes)
   if (entries.length === 0) {
-    return <span className="text-base-content/30">—</span>
+    return <span className="text-base-content/70">—</span>
   }
 
   return (
@@ -238,7 +238,7 @@ function AttributeList({
           key={key}
           className="inline-flex min-w-0 max-w-full items-baseline gap-1 rounded-md bg-base-200 px-2 py-1 text-[11px]"
         >
-          <dt className="shrink-0 text-base-content/45">{key}</dt>
+          <dt className="shrink-0 text-base-content/70">{key}</dt>
           <dd className="min-w-0 truncate font-mono text-base-content/75">
             {formatAttribute(value)}
           </dd>

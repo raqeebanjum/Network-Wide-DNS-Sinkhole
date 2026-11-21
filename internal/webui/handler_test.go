@@ -82,6 +82,24 @@ func TestSPAHandlerServesFilesAndFallback(t *testing.T) {
 	}
 }
 
+func TestHandlerSecurityHeaders(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	Handler().ServeHTTP(response, request)
+
+	if got := response.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q", got)
+	}
+	if got := response.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q", got)
+	}
+	if got := response.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'self'") {
+		t.Errorf("Content-Security-Policy = %q", got)
+	}
+}
+
 func TestSPAHandlerReportsMissingIndex(t *testing.T) {
 	t.Parallel()
 

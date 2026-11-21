@@ -31,7 +31,7 @@ export function EmptyState({
   return (
     <div className="flex min-h-48 flex-col items-center justify-center px-6 py-10 text-center">
       <div
-        className="mb-4 grid size-12 place-items-center rounded-full bg-base-200 text-base-content/40"
+        className="mb-4 grid size-12 place-items-center rounded-full bg-base-200 text-base-content/70"
         aria-hidden="true"
       >
         <svg
@@ -48,8 +48,8 @@ export function EmptyState({
           />
         </svg>
       </div>
-      <h3 className="font-medium">{title}</h3>
-      <p className="mt-1 max-w-md text-sm text-base-content/60">
+      <p className="font-medium">{title}</p>
+      <p className="mt-1 max-w-md text-sm text-base-content/70">
         {description}
       </p>
       {action && <div className="mt-4">{action}</div>}
@@ -61,7 +61,7 @@ export function LoadingPanel({ label = 'Loading' }: { label?: string }) {
   return (
     <div className="flex min-h-48 items-center justify-center gap-3">
       <span className="loading loading-spinner loading-md" />
-      <span className="text-sm text-base-content/60">{label}</span>
+      <span className="text-sm text-base-content/70">{label}</span>
     </div>
   )
 }

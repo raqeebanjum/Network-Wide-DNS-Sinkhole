@@ -5,7 +5,7 @@ BIN := bin/sinkhole
 EMBED_DIR := internal/webui/dist
 IMAGE ?= network-wide-dns-sinkhole:local
 
-.PHONY: all check fmt fmt-check lint typecheck test test-race build web-build backend-build run web-install web-dev docker-build docker-up docker-down clean
+.PHONY: all check fmt fmt-check lint typecheck test test-race bench fuzz-blocklist build web-build backend-build run web-install web-dev docker-build docker-up docker-down clean
 
 all: check
 
@@ -31,6 +31,12 @@ test:
 
 test-race:
 	$(GO) test -race ./...
+
+bench:
+	$(GO) test -run '^$$' -bench . -benchmem ./internal/rules ./internal/dnsserver
+
+fuzz-blocklist:
+	$(GO) test -run '^$$' -fuzz=FuzzParse -fuzztime=10s ./internal/blocklists
 
 build: web-build backend-build
 

@@ -15,6 +15,7 @@ import type {
 } from '../api/types'
 import { EmptyState, ErrorAlert, LoadingPanel } from '../components/Feedback'
 import { formatDateTime, formatNumber } from '../lib/format'
+import { useModalFocus } from '../lib/useModalFocus'
 
 const emptyForm = {
   name: '',
@@ -34,6 +35,9 @@ export function BlocklistsPage() {
   const [deleteTarget, setDeleteTarget] = useState<BlocklistEntry | null>(null)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const deleteModalRef = useModalFocus(deleteTarget !== null, () =>
+    setDeleteTarget(null),
+  )
 
   useEffect(() => {
     let active = true
@@ -261,14 +265,14 @@ export function BlocklistsPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             Blocklists
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/60">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
             Download public domain lists into the active matcher. Failed
             refreshes keep the last working snapshot.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {updatedAt && (
-            <span className="hidden whitespace-nowrap text-xs text-base-content/45 sm:inline">
+            <span className="hidden whitespace-nowrap text-xs text-base-content/70 sm:inline">
               Updated {updatedAt.toLocaleTimeString()}
             </span>
           )}
@@ -309,7 +313,7 @@ export function BlocklistsPage() {
 
       {availablePresets.length > 0 && (
         <section className="mt-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-base-content/55">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-base-content/70">
             Recommended sources
           </h2>
           <div className="mt-3 grid gap-4 lg:grid-cols-3">
@@ -327,12 +331,12 @@ export function BlocklistsPage() {
                         {preset.license}
                       </span>
                     </div>
-                    <p className="text-sm leading-6 text-base-content/60">
+                    <p className="text-sm leading-6 text-base-content/70">
                       {preset.description}
                     </p>
                     <div className="mt-auto flex items-center justify-between gap-3">
                       <a
-                        className="link link-hover text-xs text-base-content/50"
+                        className="link link-hover text-xs text-base-content/70"
                         href={preset.homepage}
                         target="_blank"
                         rel="noreferrer"
@@ -404,7 +408,7 @@ export function BlocklistsPage() {
                         )}
                         {list.license && list.homepage && (
                           <a
-                            className="link link-hover text-xs text-base-content/40"
+                            className="link link-hover text-xs text-base-content/70"
                             href={list.homepage}
                             target="_blank"
                             rel="noreferrer"
@@ -414,7 +418,7 @@ export function BlocklistsPage() {
                         )}
                       </div>
                       <a
-                        className="mt-1 block truncate font-mono text-xs text-base-content/45 hover:text-base-content/70"
+                        className="mt-1 block truncate font-mono text-xs text-base-content/70 hover:text-base-content/70"
                         href={list.url}
                         target="_blank"
                         rel="noreferrer"
@@ -590,11 +594,15 @@ export function BlocklistsPage() {
           aria-modal="true"
           aria-labelledby="delete-blocklist-title"
         >
-          <div className="modal-box border border-base-300 bg-base-100">
+          <div
+            ref={deleteModalRef}
+            tabIndex={-1}
+            className="modal-box border border-base-300 bg-base-100"
+          >
             <h2 id="delete-blocklist-title" className="text-lg font-semibold">
               Delete this blocklist?
             </h2>
-            <p className="mt-2 text-sm text-base-content/60">
+            <p className="mt-2 text-sm text-base-content/70">
               <span className="font-mono">{deleteTarget.name}</span> and its
               downloaded domains will be removed immediately.
             </p>
@@ -635,7 +643,7 @@ export function BlocklistsPage() {
 function Metadata({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="uppercase tracking-wide text-base-content/40">{label}</p>
+      <p className="uppercase tracking-wide text-base-content/70">{label}</p>
       <p className="mt-1 text-base-content/70">{value}</p>
     </div>
   )

@@ -20,7 +20,7 @@ func Embedded() bool {
 func Handler() http.Handler {
 	content, ok := frontend()
 	if !ok {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		return withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = w.Write([]byte(`<!doctype html>
@@ -31,9 +31,23 @@ func Handler() http.Handler {
 <p>Start the Vite frontend with <code>make web-dev</code> and open
 <a href="http://localhost:5173">http://localhost:5173</a>.</p>
 </body></html>`))
-		})
+		}))
 	}
-	return newSPAHandler(content)
+	return withSecurityHeaders(newSPAHandler(content))
+}
+
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; font-src 'self'; connect-src 'self'; "+
+				"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, request)
+	})
 }
 
 func newSPAHandler(content fs.FS) http.Handler {

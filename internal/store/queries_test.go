@@ -175,6 +175,61 @@ func TestQueryStats(t *testing.T) {
 	}
 }
 
+func TestDeleteExpiredQueriesUnderLoad(t *testing.T) {
+	t.Parallel()
+
+	database := openTestStore(t, filepath.Join(t.TempDir(), "sinkhole.db"))
+	ctx := context.Background()
+	cutoff := time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)
+
+	events := make([]querylog.Event, 0, 3000)
+	for index := range 2500 {
+		events = append(events, querylog.Event{
+			Timestamp: cutoff.Add(-time.Duration(index+1) * time.Minute),
+			Domain:    "expired.example",
+			Outcome:   querylog.OutcomeForwarded,
+		})
+	}
+	for index := range 500 {
+		events = append(events, querylog.Event{
+			Timestamp: cutoff.Add(time.Duration(index+1) * time.Minute),
+			Domain:    "retained.example",
+			Outcome:   querylog.OutcomeForwarded,
+		})
+	}
+	if err := database.InsertQueries(ctx, events); err != nil {
+		t.Fatalf("insert load-test queries: %v", err)
+	}
+
+	var deleted int64
+	for {
+		count, err := database.DeleteQueriesBefore(ctx, cutoff, 1000)
+		if err != nil {
+			t.Fatalf("delete expired queries: %v", err)
+		}
+		deleted += count
+		if count < 1000 {
+			break
+		}
+	}
+	if deleted != 2500 {
+		t.Errorf("deleted = %d, want 2500", deleted)
+	}
+
+	page, err := database.ListQueries(ctx, querylog.Filter{Limit: 500})
+	if err != nil {
+		t.Fatalf("list retained queries: %v", err)
+	}
+	if len(page.Entries) != 500 {
+		t.Errorf("retained queries = %d, want 500", len(page.Entries))
+	}
+	for _, entry := range page.Entries {
+		if entry.Domain != "retained.example" {
+			t.Fatalf("retention removed a live query: %#v", entry)
+		}
+	}
+}
+
 func TestDeleteQueriesBeforeInBatches(t *testing.T) {
 	t.Parallel()
 

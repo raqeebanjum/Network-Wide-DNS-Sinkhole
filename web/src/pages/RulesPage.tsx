@@ -9,6 +9,7 @@ import type { RuleEntry, RuleInput, RuleType } from '../api/types'
 import { RuleTypeBadge } from '../components/Badges'
 import { EmptyState, ErrorAlert, LoadingPanel } from '../components/Feedback'
 import { formatDateTime } from '../lib/format'
+import { useModalFocus } from '../lib/useModalFocus'
 
 const emptyForm: RuleInput = { domain: '', type: 'deny', note: '' }
 
@@ -23,6 +24,9 @@ export function RulesPage() {
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const deleteModalRef = useModalFocus(deleteTarget !== null, () =>
+    setDeleteTarget(null),
+  )
 
   useEffect(() => {
     let active = true
@@ -142,14 +146,14 @@ export function RulesPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             Allow &amp; deny rules
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/60">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
             Rules match a domain and every subdomain. Allow rules always take
             precedence over deny rules.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {updatedAt && (
-            <span className="hidden whitespace-nowrap text-xs text-base-content/45 sm:inline">
+            <span className="hidden whitespace-nowrap text-xs text-base-content/70 sm:inline">
               Updated {updatedAt.toLocaleTimeString()}
             </span>
           )}
@@ -179,7 +183,7 @@ export function RulesPage() {
               <h2 className="card-title text-lg">
                 {editingId === null ? 'Add a rule' : `Edit rule #${editingId}`}
               </h2>
-              <p className="mt-1 text-sm text-base-content/55">
+              <p className="mt-1 text-sm text-base-content/70">
                 Enter a bare domain without wildcards or a URL.
               </p>
             </div>
@@ -304,17 +308,17 @@ export function RulesPage() {
                         <span className="block truncate font-mono text-sm">
                           {rule.domain}
                         </span>
-                        <span className="text-[11px] text-base-content/40">
+                        <span className="text-[11px] text-base-content/70">
                           #{rule.id}
                         </span>
                       </td>
                       <td>
                         <RuleTypeBadge type={rule.type} />
                       </td>
-                      <td className="max-w-xs truncate text-sm text-base-content/60">
+                      <td className="max-w-xs truncate text-sm text-base-content/70">
                         {rule.note || '—'}
                       </td>
-                      <td className="whitespace-nowrap text-xs text-base-content/50">
+                      <td className="whitespace-nowrap text-xs text-base-content/70">
                         {formatDateTime(rule.updated_at)}
                       </td>
                       <td>
@@ -351,11 +355,15 @@ export function RulesPage() {
           aria-modal="true"
           aria-labelledby="delete-rule-title"
         >
-          <div className="modal-box border border-base-300 bg-base-100">
+          <div
+            ref={deleteModalRef}
+            tabIndex={-1}
+            className="modal-box border border-base-300 bg-base-100"
+          >
             <h2 id="delete-rule-title" className="text-lg font-semibold">
               Delete this rule?
             </h2>
-            <p className="mt-2 text-sm text-base-content/60">
+            <p className="mt-2 text-sm text-base-content/70">
               <span className="font-mono">{deleteTarget.domain}</span> will be
               removed immediately and no longer affect DNS responses.
             </p>

@@ -83,14 +83,14 @@ export function OverviewPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             DNS activity
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/60">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
             Query totals, block rate, and the busiest clients across your
             network.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {updatedAt && (
-            <span className="hidden text-xs text-base-content/45 sm:inline">
+            <span className="hidden text-xs text-base-content/70 sm:inline">
               Updated {updatedAt.toLocaleTimeString()}
             </span>
           )}
@@ -156,12 +156,12 @@ export function OverviewPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="card-title">Query volume</h2>
-                    <p className="text-sm text-base-content/55">
+                    <p className="text-sm text-base-content/70">
                       {formatCompactDateTime(stats.since)} —{' '}
                       {formatCompactDateTime(stats.until)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-base-content/60">
+                  <div className="flex items-center gap-3 text-xs text-base-content/70">
                     <span className="inline-flex items-center gap-1.5">
                       <span className="size-2 rounded-full bg-primary" />
                       Allowed
@@ -188,7 +188,7 @@ export function OverviewPage() {
               <div className="card-body">
                 <h2 className="card-title">Top blocked domains</h2>
                 {stats.top_blocked_domains.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-base-content/50">
+                  <p className="py-8 text-center text-sm text-base-content/70">
                     No blocked domains in this range.
                   </p>
                 ) : (
@@ -198,7 +198,7 @@ export function OverviewPage() {
                         key={item.domain}
                         className="flex items-start gap-3 border-b border-base-300/60 pb-3 last:border-0 last:pb-0"
                       >
-                        <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-semibold text-base-content/50">
+                        <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-base-200 text-xs font-semibold text-base-content/70">
                           {index + 1}
                         </span>
                         <span className="min-w-0 flex-1 break-all font-mono text-sm">
@@ -219,7 +219,7 @@ export function OverviewPage() {
             <div className="card-body">
               <h2 className="card-title">Busiest clients</h2>
               {stats.top_clients.length === 0 ? (
-                <p className="py-8 text-center text-sm text-base-content/50">
+                <p className="py-8 text-center text-sm text-base-content/70">
                   No client activity in this range.
                 </p>
               ) : (
@@ -246,6 +246,7 @@ export function OverviewPage() {
                           <td>
                             <progress
                               className="progress progress-primary h-2"
+                              aria-label={`${client.client_ip} share of queries`}
                               value={client.total}
                               max={Math.max(stats.total, 1)}
                             />
@@ -278,13 +279,13 @@ function MetricCard({
   return (
     <article className="card border border-base-300 bg-base-100 shadow-sm">
       <div className="card-body gap-2 p-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-base-content/50">
+        <p className="text-xs font-medium uppercase tracking-wide text-base-content/70">
           {label}
         </p>
         <p className={`text-3xl font-semibold tracking-tight ${accent}`}>
           {value}
         </p>
-        {detail && <p className="text-xs text-base-content/45">{detail}</p>}
+        {detail && <p className="text-xs text-base-content/70">{detail}</p>}
       </div>
     </article>
   )
@@ -326,7 +327,7 @@ function QueryChart({ stats }: { stats: QueryStats }) {
           )
         })}
       </div>
-      <div className="mt-3 flex justify-between text-[11px] text-base-content/45">
+      <div className="mt-3 flex justify-between text-[11px] text-base-content/70">
         {stats.buckets.length === 1 ? (
           <span className="w-full text-center">
             {formatCompactDateTime(first.start)}

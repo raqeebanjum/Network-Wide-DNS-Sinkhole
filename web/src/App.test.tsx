@@ -160,6 +160,17 @@ describe('App', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('Query detail')).toBeInTheDocument()
     expect(screen.getByText('NXDOMAIN')).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('offers a keyboard skip link to the main content', () => {
+    mockAPI()
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip to content' }))
+    expect(document.activeElement).toBe(document.getElementById('main-content'))
   })
 
   it('shows rules and system diagnostics', async () => {

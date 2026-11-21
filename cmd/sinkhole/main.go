@@ -131,7 +131,10 @@ func run() error {
 		Addr:              cfg.HTTPListen,
 		Handler:           rootHandler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 	logger.Info("dashboard handler ready", "embedded", webui.Embedded())
 

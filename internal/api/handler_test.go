@@ -27,6 +27,12 @@ func TestHealth(t *testing.T) {
 	if got := response.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 		t.Errorf("Content-Type = %q", got)
 	}
+	if got := response.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q", got)
+	}
+	if got := response.Header().Get("Content-Security-Policy"); got == "" {
+		t.Error("Content-Security-Policy header is missing")
+	}
 
 	var body healthResponse
 	decodeResponse(t, response, &body)
@@ -178,6 +184,15 @@ func TestRuleValidationAndErrors(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Errorf("PATCH status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/rules",
+		strings.NewReader(`{"domain":"form.example","type":"deny"}`))
+	request.Header.Set("Content-Type", "text/plain")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain status = %d, want %d", response.Code, http.StatusUnsupportedMediaType)
 	}
 }
 

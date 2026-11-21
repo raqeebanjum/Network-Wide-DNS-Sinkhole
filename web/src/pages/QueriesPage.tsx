@@ -9,6 +9,7 @@ import type {
 import { OutcomeBadge, RuleTypeBadge } from '../components/Badges'
 import { EmptyState, ErrorAlert, LoadingPanel } from '../components/Feedback'
 import { formatDateTime, formatDuration } from '../lib/format'
+import { useModalFocus } from '../lib/useModalFocus'
 
 interface FilterForm {
   domain: string
@@ -82,15 +83,6 @@ export function QueriesPage() {
     }
   }, [applied, cursor, reloadKey])
 
-  useEffect(() => {
-    if (!selected) return
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') setSelected(null)
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [selected])
-
   function prepareReload() {
     setLoading(true)
     setData(null)
@@ -136,12 +128,12 @@ export function QueriesPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             DNS requests
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/60">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
             Newest-first history with the decision, matching rule, upstream, and
             latency for every request.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-base-content/50">
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-base-content/70">
           <span className="relative flex size-2">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-50" />
             <span className="relative inline-flex size-2 rounded-full bg-success" />
@@ -274,7 +266,7 @@ export function QueriesPage() {
                 <tbody>
                   {data.queries.map((entry) => (
                     <tr key={entry.id} className="hover">
-                      <td className="whitespace-nowrap text-xs text-base-content/60">
+                      <td className="whitespace-nowrap text-xs text-base-content/70">
                         {formatDateTime(entry.timestamp)}
                       </td>
                       <td className="whitespace-nowrap font-mono text-xs">
@@ -287,7 +279,7 @@ export function QueriesPage() {
                         {(entry.rule_domain ||
                           entry.blocklist_name ||
                           entry.response_code === 'NXDOMAIN') && (
-                          <span className="text-[11px] text-base-content/40">
+                          <span className="text-[11px] text-base-content/70">
                             {entry.rule_domain
                               ? `rule: ${entry.rule_domain}`
                               : entry.blocklist_name
@@ -319,7 +311,7 @@ export function QueriesPage() {
             </div>
 
             <div className="flex flex-col gap-3 border-t border-base-300 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-base-content/50">
+              <span className="text-base-content/70">
                 Showing {data.queries.length} request
                 {data.queries.length === 1 ? '' : 's'}
               </span>
@@ -388,6 +380,7 @@ function QueryDetails({
   entry: QueryEntry
   onClose: () => void
 }) {
+  const modalRef = useModalFocus(true, onClose)
   const ruleType =
     entry.rule_kind === 'allow' || entry.rule_kind === 'deny'
       ? entry.rule_kind
@@ -400,7 +393,11 @@ function QueryDetails({
       aria-modal="true"
       aria-labelledby="query-detail-title"
     >
-      <div className="modal-box max-w-2xl border border-base-300 bg-base-100">
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="modal-box max-w-2xl border border-base-300 bg-base-100"
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
@@ -439,7 +436,7 @@ function QueryDetails({
             mono={Boolean(entry.rule_id || entry.blocklist_id)}
           />
           <div>
-            <dt className="text-xs uppercase tracking-wide text-base-content/45">
+            <dt className="text-xs uppercase tracking-wide text-base-content/70">
               Source type
             </dt>
             <dd className="mt-1">
@@ -448,7 +445,7 @@ function QueryDetails({
               ) : entry.blocklist_id ? (
                 <span className="badge badge-error badge-sm">Blocklist</span>
               ) : (
-                <span className="text-base-content/60">None</span>
+                <span className="text-base-content/70">None</span>
               )}
             </dd>
           </div>
@@ -481,7 +478,7 @@ function Detail({
 }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-base-content/45">
+      <dt className="text-xs uppercase tracking-wide text-base-content/70">
         {label}
       </dt>
       <dd className={`mt-1 break-all ${mono ? 'font-mono' : ''}`}>{value}</dd>

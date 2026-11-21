@@ -173,6 +173,13 @@ func (s *Server) serve(network string, server *dns.Server) {
 // ServeDNS forwards one query and converts forwarding failures into SERVFAIL.
 // It implements dns.Handler.
 func (s *Server) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logger.Error("panic while handling DNS query", "panic", fmt.Sprint(recovered))
+			s.writeRcode(w, request, dns.RcodeServerFailure)
+		}
+	}()
+
 	startedAt := time.Now()
 
 	if request.Opcode != dns.OpcodeQuery {

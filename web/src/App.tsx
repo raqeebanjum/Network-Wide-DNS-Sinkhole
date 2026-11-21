@@ -76,6 +76,13 @@ function App() {
 
   return (
     <div className="min-h-screen bg-base-200">
+      <button
+        type="button"
+        className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-primary-content focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        onClick={() => document.getElementById('main-content')?.focus()}
+      >
+        Skip to content
+      </button>
       <header className="border-b border-base-300 bg-base-100">
         <nav
           className="navbar mx-auto min-h-16 max-w-7xl px-4 sm:px-6"
@@ -113,7 +120,7 @@ function App() {
                 <p className="text-base font-semibold leading-tight">
                   Sinkhole
                 </p>
-                <p className="text-xs text-base-content/55">
+                <p className="text-xs text-base-content/70">
                   Network-wide DNS control
                 </p>
               </div>
@@ -154,7 +161,7 @@ function App() {
                   className={`group relative flex min-w-fit items-center gap-2 px-3 py-3 text-sm transition-colors ${
                     active
                       ? 'text-primary'
-                      : 'text-base-content/55 hover:text-base-content'
+                      : 'text-base-content/70 hover:text-base-content'
                   }`}
                 >
                   <NavIcon view={item.id} />
@@ -172,7 +179,11 @@ function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="mx-auto max-w-7xl px-4 py-8 focus:outline-none sm:px-6 sm:py-10"
+      >
         {view === 'overview' && <OverviewPage />}
         {view === 'queries' && <QueriesPage />}
         {view === 'rules' && <RulesPage />}
@@ -181,7 +192,7 @@ function App() {
       </main>
 
       <footer className="mt-10 border-t border-base-300 py-6">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-base-content/45 sm:flex-row sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-base-content/70 sm:flex-row sm:px-6">
           <p>Network-Wide DNS Sinkhole · local-first DNS filtering</p>
           <p>Queries refresh every 5 seconds.</p>
         </div>
