@@ -1,0 +1,15 @@
+.git
+.github
+.gitignore
+AGENTS.md
+.env
+.env.*
+bin
+data
+coverage
+web/node_modules
+web/dist
+web/coverage
+internal/webui/dist
+*.log
+.DS_Store

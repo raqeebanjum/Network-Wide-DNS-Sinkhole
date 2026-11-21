@@ -122,7 +122,7 @@ function App() {
 
           <div className="navbar-end gap-2">
             <span className="badge badge-outline badge-sm hidden md:inline-flex">
-              Phase 5 · Blocklists
+              Self-hosted DNS
             </span>
             <div
               className={`badge gap-2 ${status.badge}`}

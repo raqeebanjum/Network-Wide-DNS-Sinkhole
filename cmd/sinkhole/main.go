@@ -20,6 +20,7 @@ import (
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/querylog"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/store"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/webui"
 )
 
 func main() {
@@ -113,19 +114,26 @@ func run() error {
 		"upstreams", cfg.Upstreams,
 	)
 
+	apiHandler := api.NewHandler(api.Dependencies{
+		Rules:      ruleManager,
+		Blocklists: blocklistService,
+		Queries:    database,
+		SystemLogs: logBuffer,
+		LogStats:   queryWriter,
+		Logger:     logger,
+	})
+	rootHandler := http.NewServeMux()
+	rootHandler.Handle("/api/", apiHandler)
+	rootHandler.Handle("/api", apiHandler)
+	rootHandler.Handle("/", webui.Handler())
+
 	httpServer := &http.Server{
-		Addr: cfg.HTTPListen,
-		Handler: api.NewHandler(api.Dependencies{
-			Rules:      ruleManager,
-			Blocklists: blocklistService,
-			Queries:    database,
-			SystemLogs: logBuffer,
-			LogStats:   queryWriter,
-			Logger:     logger,
-		}),
+		Addr:              cfg.HTTPListen,
+		Handler:           rootHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	logger.Info("dashboard handler ready", "embedded", webui.Embedded())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

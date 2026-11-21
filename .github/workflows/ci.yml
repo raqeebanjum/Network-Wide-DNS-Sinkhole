@@ -54,3 +54,38 @@ jobs:
         run: npm run test
       - name: Build
         run: npm run build
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t sinkhole:ci .
+      - name: Run container
+        run: |
+          docker run -d --name sinkhole-ci \
+            --cap-drop ALL --cap-add NET_BIND_SERVICE \
+            --security-opt no-new-privileges:true \
+            -p 15353:53/udp -p 15353:53/tcp -p 18080:8080 \
+            -e SINKHOLE_UPSTREAMS=1.1.1.1:53 \
+            sinkhole:ci
+      - name: Smoke test
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/api/health; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:18080/api/health
+          curl --fail --silent http://127.0.0.1:18080/ | grep -q '<title>Sinkhole'
+          curl --fail --silent -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"domain":"ci-blocked.test","type":"deny"}' \
+            http://127.0.0.1:18080/api/rules
+      - name: Container logs
+        if: always()
+        run: docker logs sinkhole-ci
+      - name: Cleanup
+        if: always()
+        run: docker rm -f sinkhole-ci
