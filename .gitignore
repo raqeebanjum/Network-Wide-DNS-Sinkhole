@@ -9,13 +9,10 @@ AGENTS.md
 # Build output and runtime state
 bin/
 data/
-coverage/
-*.test
 
 # Frontend dependencies and embedded build output
 web/node_modules/
 web/dist/
-web/coverage/
 internal/webui/dist/
 
 # Operating system files

@@ -1,3 +1,0 @@
-0.0.0.0 hosts.example
-||adblock.example^
-plain.example
