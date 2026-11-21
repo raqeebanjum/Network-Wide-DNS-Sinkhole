@@ -11,9 +11,15 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
 )
 
 const startTimeout = 5 * time.Second
+
+// RuleMatcher checks a query name against the active rule snapshot.
+type RuleMatcher interface {
+	Match(name string) (rules.Match, bool)
+}
 
 // Config describes the DNS listener and upstream forwarding behavior.
 type Config struct {
@@ -21,6 +27,7 @@ type Config struct {
 	Upstreams      []string
 	RequestTimeout time.Duration
 	MaxInflight    int
+	Matcher        RuleMatcher
 	Logger         *slog.Logger
 }
 
@@ -166,6 +173,13 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
 	if len(request.Question) != 1 {
 		s.writeRcode(w, request, dns.RcodeFormatError)
 		return
+	}
+
+	if s.config.Matcher != nil {
+		if match, ok := s.config.Matcher.Match(request.Question[0].Name); ok && match.Rule.Kind == rules.KindDeny {
+			s.writeRcode(w, request, dns.RcodeNameError)
+			return
+		}
 	}
 
 	network := "udp"

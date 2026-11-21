@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/testutil"
 )
 
@@ -55,6 +56,51 @@ func TestFallsBackToNextUpstream(t *testing.T) {
 	}
 	if len(response.Answer) != 1 {
 		t.Fatalf("answer count = %d, want 1", len(response.Answer))
+	}
+}
+
+func TestReturnsNXDOMAINForDeniedRuleWithoutCallingUpstream(t *testing.T) {
+	t.Parallel()
+
+	var upstreamCalls atomic.Int32
+	upstream := startUpstream(t, dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		upstreamCalls.Add(1)
+		writeAReply(w, request)
+	}))
+	matcher := rules.NewMatcher([]rules.Rule{
+		{ID: 1, Domain: "blocked.example", Kind: rules.KindDeny},
+	})
+	server := startTestServerWithMatcher(
+		t,
+		[]string{upstream.Address},
+		2*time.Second,
+		8,
+		matcher,
+	)
+
+	blocked, err := exchangeName(server.Address(), "udp", "ads.blocked.example.")
+	if err != nil {
+		t.Fatalf("query blocked name: %v", err)
+	}
+	if blocked.Rcode != dns.RcodeNameError {
+		t.Fatalf("blocked rcode = %s, want NXDOMAIN", dns.RcodeToString[blocked.Rcode])
+	}
+	if !blocked.RecursionAvailable {
+		t.Error("blocked response does not set recursion available")
+	}
+	if calls := upstreamCalls.Load(); calls != 0 {
+		t.Errorf("upstream calls after blocked query = %d, want 0", calls)
+	}
+
+	allowed, err := exchangeName(server.Address(), "udp", "allowed.example.")
+	if err != nil {
+		t.Fatalf("query allowed name: %v", err)
+	}
+	if allowed.Rcode != dns.RcodeSuccess {
+		t.Fatalf("allowed rcode = %s, want NOERROR", dns.RcodeToString[allowed.Rcode])
+	}
+	if calls := upstreamCalls.Load(); calls != 1 {
+		t.Errorf("upstream calls after allowed query = %d, want 1", calls)
 	}
 }
 
@@ -181,11 +227,24 @@ func startUpstream(t *testing.T, handler dns.Handler) *testutil.DNSUpstream {
 func startTestServer(t *testing.T, upstreams []string, timeout time.Duration, maxInflight int) *Server {
 	t.Helper()
 
+	return startTestServerWithMatcher(t, upstreams, timeout, maxInflight, nil)
+}
+
+func startTestServerWithMatcher(
+	t *testing.T,
+	upstreams []string,
+	timeout time.Duration,
+	maxInflight int,
+	matcher RuleMatcher,
+) *Server {
+	t.Helper()
+
 	server, err := New(Config{
 		Listen:         "127.0.0.1:0",
 		Upstreams:      upstreams,
 		RequestTimeout: timeout,
 		MaxInflight:    maxInflight,
+		Matcher:        matcher,
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
@@ -215,8 +274,12 @@ func query(t *testing.T, address, network string) *dns.Msg {
 }
 
 func exchange(address, network string) (*dns.Msg, error) {
+	return exchangeName(address, network, "www.example.test.")
+}
+
+func exchangeName(address, network, name string) (*dns.Msg, error) {
 	request := new(dns.Msg)
-	request.SetQuestion("www.example.test.", dns.TypeA)
+	request.SetQuestion(name, dns.TypeA)
 	client := &dns.Client{Net: network, Timeout: 2 * time.Second}
 	response, _, err := client.Exchange(request, address)
 	return response, err

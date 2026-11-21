@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/config"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/dnsserver"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/logging"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/store"
 )
 
 func main() {
@@ -40,11 +43,28 @@ func run() error {
 		return fmt.Errorf("create data directory %q: %w", cfg.DataDir, err)
 	}
 
+	database, err := store.Open(filepath.Join(cfg.DataDir, "sinkhole.db"))
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			logger.Error("close database", "error", err)
+		}
+	}()
+
+	ruleManager, err := rules.NewManager(context.Background(), database)
+	if err != nil {
+		return fmt.Errorf("load rules: %w", err)
+	}
+	logger.Info("rules loaded", "count", ruleManager.Count())
+
 	dnsService, err := dnsserver.New(dnsserver.Config{
 		Listen:         cfg.DNSListen,
 		Upstreams:      cfg.Upstreams,
 		RequestTimeout: cfg.DNSRequestTimeout,
 		MaxInflight:    cfg.DNSMaxInflight,
+		Matcher:        ruleManager,
 		Logger:         logger,
 	})
 	if err != nil {
@@ -59,8 +79,11 @@ func run() error {
 	)
 
 	httpServer := &http.Server{
-		Addr:              cfg.HTTPListen,
-		Handler:           api.NewHandler(),
+		Addr: cfg.HTTPListen,
+		Handler: api.NewHandler(api.Dependencies{
+			Rules:  ruleManager,
+			Logger: logger,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
