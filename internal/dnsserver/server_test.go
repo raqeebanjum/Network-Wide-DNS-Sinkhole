@@ -70,7 +70,7 @@ func TestReturnsNXDOMAINForDeniedRuleWithoutCallingUpstream(t *testing.T) {
 	}))
 	matcher := rules.NewMatcher([]rules.Rule{
 		{ID: 1, Domain: "blocked.example", Kind: rules.KindDeny},
-	})
+	}, nil)
 	server := startTestServerWithMatcher(
 		t,
 		[]string{upstream.Address},
@@ -111,7 +111,7 @@ func TestRecordsEachQueryWithDecision(t *testing.T) {
 	upstream := startReplyUpstream(t, 0)
 	matcher := rules.NewMatcher([]rules.Rule{
 		{ID: 7, Domain: "blocked.example", Kind: rules.KindDeny},
-	})
+	}, nil)
 	sink := &recordingQuerySink{}
 	server := startTestServerFull(
 		t,
@@ -166,6 +166,47 @@ func TestRecordsEachQueryWithDecision(t *testing.T) {
 	}
 	if forwarded.RuleID != 0 || forwarded.RuleKind != "" {
 		t.Errorf("forwarded event unexpectedly has rule metadata: %#v", forwarded)
+	}
+}
+
+func TestRecordsBlocklistSource(t *testing.T) {
+	t.Parallel()
+
+	upstream := startReplyUpstream(t, 0)
+	matcher := rules.NewMatcher(nil, []rules.BlocklistDomain{
+		{Domain: "listed.example", BlocklistID: 12, BlocklistName: "Test List"},
+	})
+	sink := &recordingQuerySink{}
+	server := startTestServerFull(
+		t,
+		[]string{upstream.Address},
+		2*time.Second,
+		8,
+		matcher,
+		sink,
+	)
+
+	response, err := exchangeName(server.Address(), "udp", "ads.listed.example.")
+	if err != nil {
+		t.Fatalf("query blocklisted name: %v", err)
+	}
+	if response.Rcode != dns.RcodeNameError {
+		t.Fatalf("rcode = %s, want NXDOMAIN", dns.RcodeToString[response.Rcode])
+	}
+
+	events := sink.Events()
+	if len(events) != 1 {
+		t.Fatalf("recorded events = %d, want 1", len(events))
+	}
+	event := events[0]
+	if event.Outcome != querylog.OutcomeBlocked {
+		t.Errorf("outcome = %q", event.Outcome)
+	}
+	if event.BlocklistID != 12 || event.BlocklistName != "Test List" {
+		t.Errorf("blocklist source = %d/%q", event.BlocklistID, event.BlocklistName)
+	}
+	if event.RuleID != 0 || event.RuleKind != "" {
+		t.Errorf("blocklist event unexpectedly has a manual rule: %#v", event)
 	}
 }
 

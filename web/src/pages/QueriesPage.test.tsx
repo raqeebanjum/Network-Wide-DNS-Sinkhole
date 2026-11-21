@@ -29,6 +29,8 @@ describe('QueriesPage', () => {
           rule_id: null,
           rule_kind: 'deny',
           rule_domain: 'example.com',
+          blocklist_id: null,
+          blocklist_name: '',
           upstream: '',
           response_code: 'NXDOMAIN',
           duration_ms: 0,

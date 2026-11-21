@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/blocklists"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/oplog"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/querylog"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
@@ -34,6 +35,17 @@ type RuleService interface {
 	DeleteRule(ctx context.Context, id int64) error
 }
 
+// BlocklistService manages downloaded blocklist sources.
+type BlocklistService interface {
+	List(ctx context.Context) ([]blocklists.List, error)
+	Presets() []blocklists.Preset
+	Create(ctx context.Context, input blocklists.Input) (blocklists.List, error)
+	Update(ctx context.Context, id int64, input blocklists.Input) (blocklists.List, error)
+	Delete(ctx context.Context, id int64) error
+	Refresh(ctx context.Context, id int64) (blocklists.List, error)
+	RefreshAll(ctx context.Context) ([]blocklists.RefreshResult, error)
+}
+
 // SystemLogReader provides the bounded recent operational-log buffer.
 type SystemLogReader interface {
 	Entries() []oplog.Entry
@@ -47,6 +59,7 @@ type LogStatsReader interface {
 // Dependencies contains the services exposed by the HTTP API.
 type Dependencies struct {
 	Rules      RuleService
+	Blocklists BlocklistService
 	Queries    querylog.Reader
 	SystemLogs SystemLogReader
 	LogStats   LogStatsReader
@@ -55,6 +68,7 @@ type Dependencies struct {
 
 type handler struct {
 	rules      RuleService
+	blocklists BlocklistService
 	queries    querylog.Reader
 	systemLogs SystemLogReader
 	logStats   LogStatsReader
@@ -84,19 +98,72 @@ type rulesResponse struct {
 	Rules []ruleResponse `json:"rules"`
 }
 
+type blocklistResponse struct {
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	URL           string     `json:"url"`
+	Enabled       bool       `json:"enabled"`
+	Format        string     `json:"format"`
+	License       string     `json:"license"`
+	Homepage      string     `json:"homepage"`
+	LastCheckedAt *time.Time `json:"last_checked_at"`
+	LastUpdatedAt *time.Time `json:"last_updated_at"`
+	LastError     string     `json:"last_error"`
+	DomainCount   int        `json:"domain_count"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type blocklistsResponse struct {
+	Blocklists []blocklistResponse `json:"blocklists"`
+}
+
+type blocklistPresetResponse struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	License     string `json:"license"`
+	Homepage    string `json:"homepage"`
+	Description string `json:"description"`
+}
+
+type blocklistPresetsResponse struct {
+	Presets []blocklistPresetResponse `json:"presets"`
+}
+
+type blocklistRequest struct {
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	Enabled  *bool  `json:"enabled"`
+	License  string `json:"license"`
+	Homepage string `json:"homepage"`
+}
+
+type refreshAllResponse struct {
+	Results []refreshResultResponse `json:"results"`
+}
+
+type refreshResultResponse struct {
+	BlocklistID int64  `json:"blocklist_id"`
+	Name        string `json:"name"`
+	Error       string `json:"error"`
+}
+
 type queryResponse struct {
-	ID           int64     `json:"id"`
-	Timestamp    time.Time `json:"timestamp"`
-	ClientIP     string    `json:"client_ip"`
-	Domain       string    `json:"domain"`
-	QueryType    string    `json:"query_type"`
-	Outcome      string    `json:"outcome"`
-	RuleID       *int64    `json:"rule_id"`
-	RuleKind     string    `json:"rule_kind"`
-	RuleDomain   string    `json:"rule_domain"`
-	Upstream     string    `json:"upstream"`
-	ResponseCode string    `json:"response_code"`
-	DurationMS   int64     `json:"duration_ms"`
+	ID            int64     `json:"id"`
+	Timestamp     time.Time `json:"timestamp"`
+	ClientIP      string    `json:"client_ip"`
+	Domain        string    `json:"domain"`
+	QueryType     string    `json:"query_type"`
+	Outcome       string    `json:"outcome"`
+	RuleID        *int64    `json:"rule_id"`
+	RuleKind      string    `json:"rule_kind"`
+	RuleDomain    string    `json:"rule_domain"`
+	BlocklistID   *int64    `json:"blocklist_id"`
+	BlocklistName string    `json:"blocklist_name"`
+	Upstream      string    `json:"upstream"`
+	ResponseCode  string    `json:"response_code"`
+	DurationMS    int64     `json:"duration_ms"`
 }
 
 type queriesResponse struct {
@@ -172,6 +239,7 @@ func NewHandler(deps Dependencies) http.Handler {
 
 	api := &handler{
 		rules:      deps.Rules,
+		blocklists: deps.Blocklists,
 		queries:    deps.Queries,
 		systemLogs: deps.SystemLogs,
 		logStats:   deps.LogStats,
@@ -184,6 +252,13 @@ func NewHandler(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/rules/{id}", api.getRule)
 	mux.HandleFunc("PUT /api/rules/{id}", api.updateRule)
 	mux.HandleFunc("DELETE /api/rules/{id}", api.deleteRule)
+	mux.HandleFunc("GET /api/blocklists", api.listBlocklists)
+	mux.HandleFunc("GET /api/blocklists/presets", api.listBlocklistPresets)
+	mux.HandleFunc("POST /api/blocklists", api.createBlocklist)
+	mux.HandleFunc("POST /api/blocklists/refresh", api.refreshAllBlocklists)
+	mux.HandleFunc("PUT /api/blocklists/{id}", api.updateBlocklist)
+	mux.HandleFunc("DELETE /api/blocklists/{id}", api.deleteBlocklist)
+	mux.HandleFunc("POST /api/blocklists/{id}/refresh", api.refreshBlocklist)
 	mux.HandleFunc("GET /api/queries", api.listQueries)
 	mux.HandleFunc("GET /api/stats", api.queryStats)
 	mux.HandleFunc("GET /api/system-logs", api.listSystemLogs)
@@ -286,6 +361,207 @@ func (h *handler) deleteRule(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) listBlocklists(w http.ResponseWriter, request *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	lists, err := h.blocklists.List(request.Context())
+	if err != nil {
+		h.internalError(w, "list blocklists", err)
+		return
+	}
+
+	response := blocklistsResponse{Blocklists: make([]blocklistResponse, 0, len(lists))}
+	for _, list := range lists {
+		response.Blocklists = append(response.Blocklists, newBlocklistResponse(list))
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *handler) listBlocklistPresets(w http.ResponseWriter, _ *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	presets := h.blocklists.Presets()
+	response := blocklistPresetsResponse{Presets: make([]blocklistPresetResponse, 0, len(presets))}
+	for _, preset := range presets {
+		response.Presets = append(response.Presets, blocklistPresetResponse{
+			Slug:        preset.Slug,
+			Name:        preset.Name,
+			URL:         preset.URL,
+			License:     preset.License,
+			Homepage:    preset.Homepage,
+			Description: preset.Description,
+		})
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *handler) createBlocklist(w http.ResponseWriter, request *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	input, ok := decodeBlocklistInput(w, request, true)
+	if !ok {
+		return
+	}
+	list, err := h.blocklists.Create(request.Context(), input)
+	if err != nil {
+		h.blocklistError(w, "create blocklist", err)
+		return
+	}
+	w.Header().Set("Location", fmt.Sprintf("/api/blocklists/%d", list.ID))
+	writeJSON(w, http.StatusCreated, newBlocklistResponse(list))
+}
+
+func (h *handler) updateBlocklist(w http.ResponseWriter, request *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	id, ok := blocklistID(w, request)
+	if !ok {
+		return
+	}
+	input, ok := decodeBlocklistInput(w, request, false)
+	if !ok {
+		return
+	}
+	list, err := h.blocklists.Update(request.Context(), id, input)
+	if err != nil {
+		h.blocklistError(w, "update blocklist", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newBlocklistResponse(list))
+}
+
+func (h *handler) deleteBlocklist(w http.ResponseWriter, request *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	id, ok := blocklistID(w, request)
+	if !ok {
+		return
+	}
+	if err := h.blocklists.Delete(request.Context(), id); err != nil {
+		h.blocklistError(w, "delete blocklist", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) refreshBlocklist(w http.ResponseWriter, request *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	id, ok := blocklistID(w, request)
+	if !ok {
+		return
+	}
+	list, err := h.blocklists.Refresh(request.Context(), id)
+	if err != nil {
+		h.blocklistError(w, "refresh blocklist", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newBlocklistResponse(list))
+}
+
+func (h *handler) refreshAllBlocklists(w http.ResponseWriter, request *http.Request) {
+	if !h.requireBlocklists(w) {
+		return
+	}
+	results, err := h.blocklists.RefreshAll(request.Context())
+	if err != nil {
+		h.internalError(w, "refresh blocklists", err)
+		return
+	}
+
+	response := refreshAllResponse{Results: make([]refreshResultResponse, 0, len(results))}
+	for _, result := range results {
+		response.Results = append(response.Results, refreshResultResponse{
+			BlocklistID: result.List.ID,
+			Name:        result.List.Name,
+			Error:       result.Error,
+		})
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *handler) requireBlocklists(w http.ResponseWriter) bool {
+	if h.blocklists == nil {
+		writeError(w, http.StatusServiceUnavailable, "blocklist management is unavailable")
+		return false
+	}
+	return true
+}
+
+func (h *handler) blocklistError(w http.ResponseWriter, operation string, err error) {
+	switch {
+	case errors.Is(err, blocklists.ErrInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, blocklists.ErrConflict):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, blocklists.ErrNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, blocklists.ErrRefreshInProgress):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, blocklists.ErrRefresh):
+		writeError(w, http.StatusBadGateway, err.Error())
+	default:
+		h.internalError(w, operation, err)
+	}
+}
+
+func decodeBlocklistInput(w http.ResponseWriter, request *http.Request, allowMissingEnabled bool) (blocklists.Input, bool) {
+	var body blocklistRequest
+	if err := decodeJSON(w, request, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return blocklists.Input{}, false
+	}
+
+	enabled := true
+	if body.Enabled != nil {
+		enabled = *body.Enabled
+	} else if !allowMissingEnabled {
+		writeError(w, http.StatusBadRequest, "enabled is required")
+		return blocklists.Input{}, false
+	}
+
+	return blocklists.Input{
+		Name:     body.Name,
+		URL:      body.URL,
+		Enabled:  enabled,
+		License:  body.License,
+		Homepage: body.Homepage,
+	}, true
+}
+
+func blocklistID(w http.ResponseWriter, request *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(request.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "blocklist ID must be a positive integer")
+		return 0, false
+	}
+	return id, true
+}
+
+func newBlocklistResponse(list blocklists.List) blocklistResponse {
+	return blocklistResponse{
+		ID:            list.ID,
+		Name:          list.Name,
+		URL:           list.URL,
+		Enabled:       list.Enabled,
+		Format:        list.Format,
+		License:       list.License,
+		Homepage:      list.Homepage,
+		LastCheckedAt: list.LastCheckedAt,
+		LastUpdatedAt: list.LastUpdatedAt,
+		LastError:     list.LastError,
+		DomainCount:   list.DomainCount,
+		CreatedAt:     list.CreatedAt,
+		UpdatedAt:     list.UpdatedAt,
+	}
 }
 
 func (h *handler) listQueries(w http.ResponseWriter, request *http.Request) {
@@ -553,21 +829,26 @@ func statsBucket(window time.Duration) time.Duration {
 
 func newQueryResponse(entry querylog.Entry) queryResponse {
 	response := queryResponse{
-		ID:           entry.ID,
-		Timestamp:    entry.Timestamp,
-		ClientIP:     entry.ClientIP,
-		Domain:       entry.Domain,
-		QueryType:    entry.QueryType,
-		Outcome:      string(entry.Outcome),
-		RuleKind:     entry.RuleKind,
-		RuleDomain:   entry.RuleDomain,
-		Upstream:     entry.Upstream,
-		ResponseCode: entry.ResponseCode,
-		DurationMS:   entry.DurationMS,
+		ID:            entry.ID,
+		Timestamp:     entry.Timestamp,
+		ClientIP:      entry.ClientIP,
+		Domain:        entry.Domain,
+		QueryType:     entry.QueryType,
+		Outcome:       string(entry.Outcome),
+		RuleKind:      entry.RuleKind,
+		RuleDomain:    entry.RuleDomain,
+		BlocklistName: entry.BlocklistName,
+		Upstream:      entry.Upstream,
+		ResponseCode:  entry.ResponseCode,
+		DurationMS:    entry.DurationMS,
 	}
 	if entry.RuleID > 0 {
 		ruleID := entry.RuleID
 		response.RuleID = &ruleID
+	}
+	if entry.BlocklistID > 0 {
+		blocklistID := entry.BlocklistID
+		response.BlocklistID = &blocklistID
 	}
 	return response
 }

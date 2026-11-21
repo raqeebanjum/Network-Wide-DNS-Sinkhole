@@ -7,13 +7,15 @@ import (
 	"sync/atomic"
 )
 
-// Store persists rules. Implementations receive already-normalized input.
+// Store persists rules and enabled blocklist domains. Implementations receive
+// already-normalized rule input.
 type Store interface {
 	ListRules(ctx context.Context) ([]Rule, error)
 	GetRule(ctx context.Context, id int64) (Rule, error)
 	CreateRule(ctx context.Context, input Input) (Rule, error)
 	UpdateRule(ctx context.Context, id int64, input Input) (Rule, error)
 	DeleteRule(ctx context.Context, id int64) error
+	ListBlocklistDomains(ctx context.Context) ([]BlocklistDomain, error)
 }
 
 // Manager persists rule changes and atomically publishes an immutable matcher
@@ -45,7 +47,11 @@ func (m *Manager) reloadLocked(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list rules: %w", err)
 	}
-	m.matcher.Store(NewMatcher(entries))
+	blocklistEntries, err := m.store.ListBlocklistDomains(ctx)
+	if err != nil {
+		return fmt.Errorf("list blocklist domains: %w", err)
+	}
+	m.matcher.Store(NewMatcher(entries, blocklistEntries))
 	return nil
 }
 

@@ -1,9 +1,15 @@
 import { requestJSON, requestVoid } from './client'
 import type {
+  BlocklistEntry,
+  BlocklistInput,
+  BlocklistPreset,
+  BlocklistPresetsResponse,
+  BlocklistsResponse,
   HealthResponse,
   QueriesResponse,
   QueryFilters,
   QueryStats,
+  RefreshAllResponse,
   RuleEntry,
   RuleInput,
   RulesResponse,
@@ -64,6 +70,60 @@ export function updateRule(id: number, input: RuleInput): Promise<RuleEntry> {
 
 export function deleteRule(id: number): Promise<void> {
   return requestVoid(`/api/rules/${id}`, { method: 'DELETE' })
+}
+
+export async function fetchBlocklists(
+  signal?: AbortSignal,
+): Promise<BlocklistEntry[]> {
+  const response = await requestJSON<BlocklistsResponse>('/api/blocklists', {
+    signal,
+  })
+  return response.blocklists
+}
+
+export async function fetchBlocklistPresets(
+  signal?: AbortSignal,
+): Promise<BlocklistPreset[]> {
+  const response = await requestJSON<BlocklistPresetsResponse>(
+    '/api/blocklists/presets',
+    { signal },
+  )
+  return response.presets
+}
+
+export function createBlocklist(
+  input: BlocklistInput,
+): Promise<BlocklistEntry> {
+  return requestJSON<BlocklistEntry>('/api/blocklists', {
+    method: 'POST',
+    body: input,
+  })
+}
+
+export function updateBlocklist(
+  id: number,
+  input: BlocklistInput,
+): Promise<BlocklistEntry> {
+  return requestJSON<BlocklistEntry>(`/api/blocklists/${id}`, {
+    method: 'PUT',
+    body: input,
+  })
+}
+
+export function deleteBlocklist(id: number): Promise<void> {
+  return requestVoid(`/api/blocklists/${id}`, { method: 'DELETE' })
+}
+
+export function refreshBlocklist(id: number): Promise<BlocklistEntry> {
+  return requestJSON<BlocklistEntry>(`/api/blocklists/${id}/refresh`, {
+    method: 'POST',
+  })
+}
+
+export function refreshAllBlocklists(): Promise<RefreshAllResponse> {
+  return requestJSON<RefreshAllResponse>('/api/blocklists/refresh', {
+    method: 'POST',
+  })
 }
 
 export function fetchSystemLogs(

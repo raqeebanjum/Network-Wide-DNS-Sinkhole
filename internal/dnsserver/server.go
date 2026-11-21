@@ -197,8 +197,10 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
 			event.RuleID = match.Rule.ID
 			event.RuleKind = string(match.Rule.Kind)
 			event.RuleDomain = match.Rule.Domain
+			event.BlocklistID = match.Blocklist.BlocklistID
+			event.BlocklistName = match.Blocklist.BlocklistName
 
-			if match.Rule.Kind == rules.KindDeny {
+			if match.Blocks() {
 				event.Outcome = querylog.OutcomeBlocked
 				event.ResponseCode = dns.RcodeToString[dns.RcodeNameError]
 				s.writeRcode(w, request, dns.RcodeNameError)

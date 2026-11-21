@@ -33,9 +33,10 @@ func (s *Store) InsertQueries(ctx context.Context, events []querylog.Event) erro
 	statement, err := tx.PrepareContext(ctx, `
 		INSERT INTO query_logs (
 			queried_at, client_ip, domain, query_type, outcome,
-			rule_id, rule_kind, rule_domain, upstream, response_code, duration_ms
+			rule_id, rule_kind, rule_domain, blocklist_id, blocklist_name,
+			upstream, response_code, duration_ms
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare query-log insert: %w", err)
@@ -56,6 +57,10 @@ func (s *Store) InsertQueries(ctx context.Context, events []querylog.Event) erro
 		if event.RuleID > 0 {
 			ruleID = event.RuleID
 		}
+		var blocklistID any
+		if event.BlocklistID > 0 {
+			blocklistID = event.BlocklistID
+		}
 		if _, err := statement.ExecContext(ctx,
 			event.Timestamp.UTC().UnixMilli(),
 			event.ClientIP,
@@ -65,6 +70,8 @@ func (s *Store) InsertQueries(ctx context.Context, events []querylog.Event) erro
 			ruleID,
 			event.RuleKind,
 			event.RuleDomain,
+			blocklistID,
+			event.BlocklistName,
 			event.Upstream,
 			event.ResponseCode,
 			event.DurationMS,
@@ -122,7 +129,8 @@ func (s *Store) ListQueries(ctx context.Context, filter querylog.Filter) (queryl
 	)
 	query.WriteString(`
 		SELECT id, queried_at, client_ip, domain, query_type, outcome,
-		       rule_id, rule_kind, rule_domain, upstream, response_code, duration_ms
+		       rule_id, rule_kind, rule_domain, blocklist_id, blocklist_name,
+		       upstream, response_code, duration_ms
 		FROM query_logs
 		WHERE 1 = 1
 	`)
@@ -321,11 +329,12 @@ type queryScanner interface {
 
 func scanQueryEntry(row queryScanner) (querylog.Entry, error) {
 	var (
-		entry      querylog.Entry
-		queriedAt  int64
-		outcome    string
-		ruleID     sql.NullInt64
-		durationMS int64
+		entry       querylog.Entry
+		queriedAt   int64
+		outcome     string
+		ruleID      sql.NullInt64
+		blocklistID sql.NullInt64
+		durationMS  int64
 	)
 	if err := row.Scan(
 		&entry.ID,
@@ -337,6 +346,8 @@ func scanQueryEntry(row queryScanner) (querylog.Entry, error) {
 		&ruleID,
 		&entry.RuleKind,
 		&entry.RuleDomain,
+		&blocklistID,
+		&entry.BlocklistName,
 		&entry.Upstream,
 		&entry.ResponseCode,
 		&durationMS,
@@ -348,6 +359,9 @@ func scanQueryEntry(row queryScanner) (querylog.Entry, error) {
 	entry.Outcome = querylog.Outcome(outcome)
 	if ruleID.Valid {
 		entry.RuleID = ruleID.Int64
+	}
+	if blocklistID.Valid {
+		entry.BlocklistID = blocklistID.Int64
 	}
 	entry.DurationMS = durationMS
 	return entry, nil

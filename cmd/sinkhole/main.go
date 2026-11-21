@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/api"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/blocklists"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/config"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/dnsserver"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/logging"
@@ -81,6 +82,17 @@ func run() error {
 		}
 	}()
 
+	blocklistService, err := blocklists.NewService(
+		database,
+		blocklists.NewHTTPFetcher(),
+		ruleManager,
+		cfg.BlocklistRefresh,
+		logger,
+	)
+	if err != nil {
+		return fmt.Errorf("create blocklist service: %w", err)
+	}
+
 	dnsService, err := dnsserver.New(dnsserver.Config{
 		Listen:         cfg.DNSListen,
 		Upstreams:      cfg.Upstreams,
@@ -105,6 +117,7 @@ func run() error {
 		Addr: cfg.HTTPListen,
 		Handler: api.NewHandler(api.Dependencies{
 			Rules:      ruleManager,
+			Blocklists: blocklistService,
 			Queries:    database,
 			SystemLogs: logBuffer,
 			LogStats:   queryWriter,
@@ -123,6 +136,8 @@ func run() error {
 		httpErrors <- httpServer.ListenAndServe()
 	}()
 
+	blocklistService.Start(ctx)
+
 	var serveErr error
 	select {
 	case serveErr = <-httpErrors:
@@ -137,6 +152,8 @@ func run() error {
 		logger.Info("shutdown requested")
 	}
 
+	stop()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -147,6 +164,11 @@ func run() error {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		_ = httpServer.Close()
 		shutdownErrors = append(shutdownErrors, fmt.Errorf("shut down HTTP server: %w", err))
+	}
+	blocklistCtx, blocklistCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer blocklistCancel()
+	if err := blocklistService.Wait(blocklistCtx); err != nil {
+		shutdownErrors = append(shutdownErrors, fmt.Errorf("stop blocklist refresher: %w", err))
 	}
 
 	logger.Info("shutdown complete")

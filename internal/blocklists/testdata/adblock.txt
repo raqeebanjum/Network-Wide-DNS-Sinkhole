@@ -1,0 +1,7 @@
+[Adblock Plus 2.0]
+! Adblock-style fixture
+||ads.example^
+||sub.tracker.example^
+@@||allowed.example^
+||unsupported.example^$third-party
+example.org##.cosmetic-ad

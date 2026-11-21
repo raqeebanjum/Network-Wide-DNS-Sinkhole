@@ -1,0 +1,4 @@
+# Plain-domain fixture
+Ads.Example.COM.
+plain.example
+invalid/path.example

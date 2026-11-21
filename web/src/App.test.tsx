@@ -60,6 +60,8 @@ const queries: QueriesResponse = {
       rule_id: 1,
       rule_kind: 'deny',
       rule_domain: 'ads.example.com',
+      blocklist_id: null,
+      blocklist_name: '',
       upstream: '',
       response_code: 'NXDOMAIN',
       duration_ms: 0,

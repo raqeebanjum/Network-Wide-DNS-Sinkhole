@@ -11,7 +11,7 @@ func TestMatcherUsesLabelBoundaries(t *testing.T) {
 
 	matcher := rules.NewMatcher([]rules.Rule{
 		{ID: 1, Domain: "doubleclick.net", Kind: rules.KindDeny},
-	})
+	}, nil)
 
 	tests := []struct {
 		name      string
@@ -49,7 +49,7 @@ func TestMatcherAllowOverridesDeny(t *testing.T) {
 		{ID: 2, Domain: "safe.example.com", Kind: rules.KindAllow},
 		{ID: 3, Domain: "home.example.com", Kind: rules.KindAllow},
 		{ID: 4, Domain: "ads.home.example.com", Kind: rules.KindDeny},
-	})
+	}, nil)
 
 	match, ok := matcher.Match("safe.example.com")
 	if !ok || match.Rule.Kind != rules.KindAllow || match.Rule.ID != 2 {
@@ -67,13 +67,43 @@ func TestMatcherAllowOverridesDeny(t *testing.T) {
 	}
 }
 
+func TestMatcherBlocklistPrecedenceAndAttribution(t *testing.T) {
+	t.Parallel()
+
+	matcher := rules.NewMatcher(
+		[]rules.Rule{
+			{ID: 1, Domain: "safe.blocked.example", Kind: rules.KindAllow},
+		},
+		[]rules.BlocklistDomain{
+			{Domain: "blocked.example", BlocklistID: 10, BlocklistName: "List A"},
+			{Domain: "tracker.example", BlocklistID: 11, BlocklistName: "List B"},
+			{Domain: "other.example", BlocklistID: 10, BlocklistName: "List A"},
+			{Domain: "other.example", BlocklistID: 12, BlocklistName: "List C"},
+		},
+	)
+
+	match, ok := matcher.Match("ads.blocked.example")
+	if !ok || !match.Blocks() || match.Blocklist.BlocklistName != "List A" {
+		t.Fatalf("blocklist match = %#v, %v", match, ok)
+	}
+	if _, ok := matcher.Match("notblocked.example"); ok {
+		t.Fatal("lookalike suffix matched blocklist")
+	}
+	if match, ok := matcher.Match("safe.blocked.example"); !ok || match.Blocks() {
+		t.Fatalf("allow rule did not override blocklist: %#v, %v", match, ok)
+	}
+	if match, ok := matcher.Match("other.example"); !ok || match.Blocklist.BlocklistID != 10 {
+		t.Fatalf("duplicate blocklist attribution = %#v, %v", match, ok)
+	}
+}
+
 func TestMatcherReturnsMostSpecificDeny(t *testing.T) {
 	t.Parallel()
 
 	matcher := rules.NewMatcher([]rules.Rule{
 		{ID: 1, Domain: "example.com", Kind: rules.KindDeny},
 		{ID: 2, Domain: "ads.example.com", Kind: rules.KindDeny},
-	})
+	}, nil)
 
 	match, ok := matcher.Match("tracker.ads.example.com")
 	if !ok || match.Rule.ID != 2 {

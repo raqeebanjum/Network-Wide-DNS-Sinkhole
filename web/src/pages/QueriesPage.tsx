@@ -285,11 +285,14 @@ export function QueriesPage() {
                           {entry.domain}
                         </span>
                         {(entry.rule_domain ||
+                          entry.blocklist_name ||
                           entry.response_code === 'NXDOMAIN') && (
                           <span className="text-[11px] text-base-content/40">
                             {entry.rule_domain
                               ? `rule: ${entry.rule_domain}`
-                              : entry.response_code}
+                              : entry.blocklist_name
+                                ? `list: ${entry.blocklist_name}`
+                                : entry.response_code}
                           </span>
                         )}
                       </td>
@@ -425,21 +428,25 @@ function QueryDetails({
             mono
           />
           <Detail
-            label="Rule"
+            label="Matched source"
             value={
               entry.rule_id
-                ? `#${entry.rule_id} · ${entry.rule_domain}`
-                : 'No matching rule'
+                ? `Rule #${entry.rule_id} · ${entry.rule_domain}`
+                : entry.blocklist_id
+                  ? `Blocklist #${entry.blocklist_id} · ${entry.blocklist_name}`
+                  : 'None'
             }
-            mono={Boolean(entry.rule_id)}
+            mono={Boolean(entry.rule_id || entry.blocklist_id)}
           />
           <div>
             <dt className="text-xs uppercase tracking-wide text-base-content/45">
-              Rule type
+              Source type
             </dt>
             <dd className="mt-1">
               {ruleType ? (
                 <RuleTypeBadge type={ruleType} />
+              ) : entry.blocklist_id ? (
+                <span className="badge badge-error badge-sm">Blocklist</span>
               ) : (
                 <span className="text-base-content/60">None</span>
               )}

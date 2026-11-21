@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { fetchHealth } from './api/dashboard'
+import { BlocklistsPage } from './pages/BlocklistsPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { QueriesPage } from './pages/QueriesPage'
 import { RulesPage } from './pages/RulesPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
 
-type View = 'overview' | 'queries' | 'rules' | 'system'
+type View = 'overview' | 'queries' | 'rules' | 'blocklists' | 'system'
 type BackendStatus = 'checking' | 'online' | 'offline'
 
 const navigation: Array<{
@@ -16,6 +17,7 @@ const navigation: Array<{
   { id: 'overview', label: 'Overview', description: 'Traffic summary' },
   { id: 'queries', label: 'Query Log', description: 'Request history' },
   { id: 'rules', label: 'Rules', description: 'Allow and deny' },
+  { id: 'blocklists', label: 'Blocklists', description: 'Filter sources' },
   { id: 'system', label: 'System Log', description: 'Service health' },
 ]
 
@@ -120,7 +122,7 @@ function App() {
 
           <div className="navbar-end gap-2">
             <span className="badge badge-outline badge-sm hidden md:inline-flex">
-              Phase 4 · Dashboard
+              Phase 5 · Blocklists
             </span>
             <div
               className={`badge gap-2 ${status.badge}`}
@@ -174,6 +176,7 @@ function App() {
         {view === 'overview' && <OverviewPage />}
         {view === 'queries' && <QueriesPage />}
         {view === 'rules' && <RulesPage />}
+        {view === 'blocklists' && <BlocklistsPage />}
         {view === 'system' && <SystemLogsPage />}
       </main>
 
@@ -206,6 +209,7 @@ function readView(): View {
   if (
     candidate === 'queries' ||
     candidate === 'rules' ||
+    candidate === 'blocklists' ||
     candidate === 'system'
   ) {
     return candidate
@@ -250,6 +254,30 @@ function NavIcon({ view }: { view: View }) {
           d="M12 3 5 6v5c0 4.4 2.8 8.3 7 10 4.2-1.7 7-5.6 7-10V6l-7-3Z"
         />
         <path strokeLinecap="round" d="M9 12h6" />
+      </svg>
+    )
+  }
+
+  if (view === 'blocklists') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        className={className}
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 3 4 7l8 4 8-4-8-4Z"
+        />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="m4 12 8 4 8-4M4 17l8 4 8-4"
+        />
       </svg>
     )
   }

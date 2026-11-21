@@ -31,17 +31,19 @@ func ParseOutcome(raw string) (Outcome, error) {
 // Event records one completed DNS query. Rule fields describe the active
 // decision even when an allowed query later fails upstream.
 type Event struct {
-	Timestamp    time.Time
-	ClientIP     string
-	Domain       string
-	QueryType    string
-	Outcome      Outcome
-	RuleID       int64
-	RuleKind     string
-	RuleDomain   string
-	Upstream     string
-	ResponseCode string
-	DurationMS   int64
+	Timestamp     time.Time
+	ClientIP      string
+	Domain        string
+	QueryType     string
+	Outcome       Outcome
+	RuleID        int64
+	RuleKind      string
+	RuleDomain    string
+	BlocklistID   int64
+	BlocklistName string
+	Upstream      string
+	ResponseCode  string
+	DurationMS    int64
 }
 
 // Entry is a persisted event with its database ID.
