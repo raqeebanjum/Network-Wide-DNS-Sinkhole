@@ -1,0 +1,21 @@
+# Local agent instructions
+AGENTS.md
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Build output and runtime state
+bin/
+data/
+coverage/
+*.test
+
+# Frontend dependencies and build output
+web/node_modules/
+web/dist/
+web/coverage/
+
+# Operating system files
+.DS_Store
