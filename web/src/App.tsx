@@ -41,12 +41,18 @@ const milestones = [
     phase: 'Phase 2',
     title: 'Rules and storage',
     description: 'SQLite persistence, allow/deny rules, and blocking.',
-    state: 'Current',
+    state: 'Complete',
   },
   {
     phase: 'Phase 3',
     title: 'Query visibility',
     description: 'Durable query logs, statistics, and system logs.',
+    state: 'Current',
+  },
+  {
+    phase: 'Phase 4',
+    title: 'Dashboard',
+    description: 'Interactive query history, statistics, and rule controls.',
     state: 'Next',
   },
 ]
@@ -130,15 +136,15 @@ function App() {
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
         <section className="max-w-3xl">
           <div className="badge badge-outline badge-primary">
-            Phase 2 · Rules and storage
+            Phase 3 · Query visibility
           </div>
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-base-content sm:text-5xl">
             A cleaner network starts at DNS.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-base-content/70">
-            The resolver now applies durable allow and deny rules from SQLite.
-            Query history and the dashboard rule controls arrive in the next
-            slices.
+            The resolver records durable query history, aggregate statistics,
+            and recent operational events. The interactive dashboard views
+            arrive in the next slice.
           </p>
         </section>
 
@@ -158,7 +164,7 @@ function App() {
                 <div>
                   <h2 className="card-title">Build roadmap</h2>
                   <p className="mt-1 text-sm text-base-content/60">
-                    Manual rules are active; query logging is next.
+                    Query APIs are live; the dashboard views come next.
                   </p>
                 </div>
                 <div className="badge badge-soft badge-success">On track</div>

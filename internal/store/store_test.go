@@ -86,14 +86,20 @@ func TestMigrationsRunOnce(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "sinkhole.db")
 	first := openTestStore(t, databasePath)
 
+	embedded, err := migrationFiles.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	expected := len(embedded)
+
 	var version int
 	if err := first.db.QueryRow(
 		"SELECT MAX(version) FROM schema_migrations",
 	).Scan(&version); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 1 {
-		t.Errorf("migration version = %d, want 1", version)
+	if version != expected {
+		t.Errorf("migration version = %d, want %d", version, expected)
 	}
 
 	if err := first.Close(); err != nil {
@@ -107,8 +113,8 @@ func TestMigrationsRunOnce(t *testing.T) {
 	).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("migration count = %d, want 1", count)
+	if count != expected {
+		t.Errorf("migration count = %d, want %d", count, expected)
 	}
 }
 

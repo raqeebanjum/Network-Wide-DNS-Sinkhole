@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/querylog"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
 )
 
@@ -21,6 +22,11 @@ type RuleMatcher interface {
 	Match(name string) (rules.Match, bool)
 }
 
+// QuerySink accepts completed query telemetry without waiting for persistence.
+type QuerySink interface {
+	Record(event querylog.Event)
+}
+
 // Config describes the DNS listener and upstream forwarding behavior.
 type Config struct {
 	Listen         string
@@ -28,6 +34,7 @@ type Config struct {
 	RequestTimeout time.Duration
 	MaxInflight    int
 	Matcher        RuleMatcher
+	QueryLog       QuerySink
 	Logger         *slog.Logger
 }
 
@@ -166,6 +173,8 @@ func (s *Server) serve(network string, server *dns.Server) {
 // ServeDNS forwards one query and converts forwarding failures into SERVFAIL.
 // It implements dns.Handler.
 func (s *Server) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
+	startedAt := time.Now()
+
 	if request.Opcode != dns.OpcodeQuery {
 		s.writeRcode(w, request, dns.RcodeNotImplemented)
 		return
@@ -175,10 +184,27 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
 		return
 	}
 
+	question := request.Question[0]
+	event := querylog.Event{
+		Timestamp: startedAt.UTC(),
+		ClientIP:  remoteIP(w.RemoteAddr()),
+		Domain:    rules.CanonicalName(question.Name),
+		QueryType: queryTypeName(question.Qtype),
+	}
+
 	if s.config.Matcher != nil {
-		if match, ok := s.config.Matcher.Match(request.Question[0].Name); ok && match.Rule.Kind == rules.KindDeny {
-			s.writeRcode(w, request, dns.RcodeNameError)
-			return
+		if match, ok := s.config.Matcher.Match(question.Name); ok {
+			event.RuleID = match.Rule.ID
+			event.RuleKind = string(match.Rule.Kind)
+			event.RuleDomain = match.Rule.Domain
+
+			if match.Rule.Kind == rules.KindDeny {
+				event.Outcome = querylog.OutcomeBlocked
+				event.ResponseCode = dns.RcodeToString[dns.RcodeNameError]
+				s.writeRcode(w, request, dns.RcodeNameError)
+				s.record(startedAt, event)
+				return
+			}
 		}
 	}
 
@@ -187,18 +213,59 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
 		network = "tcp"
 	}
 
-	response, err := s.forwarder.resolve(s.ctx, request.Copy(), network)
+	response, upstream, err := s.forwarder.resolve(s.ctx, request.Copy(), network)
 	if err != nil {
 		if s.ctx.Err() == nil {
 			s.logger.Warn("DNS resolution failed", "error", err)
 		}
+		event.Outcome = querylog.OutcomeFailed
+		event.Upstream = upstream
+		event.ResponseCode = dns.RcodeToString[dns.RcodeServerFailure]
 		s.writeRcode(w, request, dns.RcodeServerFailure)
+		s.record(startedAt, event)
 		return
 	}
 
 	response.Id = request.Id
 	response.Compress = true
+	event.Outcome = querylog.OutcomeForwarded
+	event.Upstream = upstream
+	event.ResponseCode = rcodeName(response.Rcode)
 	s.writeMessage(w, request, response)
+	s.record(startedAt, event)
+}
+
+func (s *Server) record(startedAt time.Time, event querylog.Event) {
+	if s.config.QueryLog == nil {
+		return
+	}
+	event.DurationMS = max(time.Since(startedAt).Milliseconds(), 0)
+	s.config.QueryLog.Record(event)
+}
+
+func remoteIP(address net.Addr) string {
+	if address == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(address.String())
+	if err != nil {
+		return address.String()
+	}
+	return host
+}
+
+func queryTypeName(queryType uint16) string {
+	if name, ok := dns.TypeToString[queryType]; ok {
+		return name
+	}
+	return fmt.Sprintf("TYPE%d", queryType)
+}
+
+func rcodeName(rcode int) string {
+	if name, ok := dns.RcodeToString[rcode]; ok {
+		return name
+	}
+	return fmt.Sprintf("RCODE%d", rcode)
 }
 
 // Shutdown stops accepting queries, cancels in-flight upstream work, and waits

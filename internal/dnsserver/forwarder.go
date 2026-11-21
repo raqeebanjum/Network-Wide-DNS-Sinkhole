@@ -38,7 +38,7 @@ func newForwarder(upstreams []string, timeout time.Duration, maxInflight int) *f
 	}
 }
 
-func (f *forwarder) resolve(ctx context.Context, request *dns.Msg, network string) (*dns.Msg, error) {
+func (f *forwarder) resolve(ctx context.Context, request *dns.Msg, network string) (*dns.Msg, string, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 
@@ -46,7 +46,7 @@ func (f *forwarder) resolve(ctx context.Context, request *dns.Msg, network strin
 	case f.slots <- struct{}{}:
 		defer func() { <-f.slots }()
 	case <-requestCtx.Done():
-		return nil, fmt.Errorf("wait for an upstream slot: %w", requestCtx.Err())
+		return nil, "", fmt.Errorf("wait for an upstream slot: %w", requestCtx.Err())
 	}
 
 	client := f.udpClient
@@ -56,6 +56,7 @@ func (f *forwarder) resolve(ctx context.Context, request *dns.Msg, network strin
 
 	start := int(f.next.Add(1)-1) % len(f.upstreams)
 	attemptErrors := make([]error, 0, len(f.upstreams))
+	lastUpstream := ""
 
 	for offset := range len(f.upstreams) {
 		if err := requestCtx.Err(); err != nil {
@@ -64,6 +65,7 @@ func (f *forwarder) resolve(ctx context.Context, request *dns.Msg, network strin
 		}
 
 		upstream := f.upstreams[(start+offset)%len(f.upstreams)]
+		lastUpstream = upstream
 		attemptCtx, attemptCancel := f.attemptContext(requestCtx, len(f.upstreams)-offset)
 		response, _, err := client.ExchangeContext(attemptCtx, request, upstream)
 		attemptCancel()
@@ -72,13 +74,13 @@ func (f *forwarder) resolve(ctx context.Context, request *dns.Msg, network strin
 			if response == nil {
 				err = errors.New("upstream returned no response")
 			} else {
-				return response, nil
+				return response, upstream, nil
 			}
 		}
 		attemptErrors = append(attemptErrors, fmt.Errorf("%s: %w", upstream, err))
 	}
 
-	return nil, fmt.Errorf("all upstream resolvers failed: %w", errors.Join(attemptErrors...))
+	return nil, lastUpstream, fmt.Errorf("all upstream resolvers failed: %w", errors.Join(attemptErrors...))
 }
 
 // attemptContext reserves an equal share of the remaining request deadline for

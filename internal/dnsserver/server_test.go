@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/querylog"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/testutil"
 )
@@ -101,6 +102,70 @@ func TestReturnsNXDOMAINForDeniedRuleWithoutCallingUpstream(t *testing.T) {
 	}
 	if calls := upstreamCalls.Load(); calls != 1 {
 		t.Errorf("upstream calls after allowed query = %d, want 1", calls)
+	}
+}
+
+func TestRecordsEachQueryWithDecision(t *testing.T) {
+	t.Parallel()
+
+	upstream := startReplyUpstream(t, 0)
+	matcher := rules.NewMatcher([]rules.Rule{
+		{ID: 7, Domain: "blocked.example", Kind: rules.KindDeny},
+	})
+	sink := &recordingQuerySink{}
+	server := startTestServerFull(
+		t,
+		[]string{upstream.Address},
+		2*time.Second,
+		8,
+		matcher,
+		sink,
+	)
+
+	if _, err := exchangeName(server.Address(), "udp", "ads.blocked.example."); err != nil {
+		t.Fatalf("query blocked name: %v", err)
+	}
+	if _, err := exchangeName(server.Address(), "tcp", "example.test."); err != nil {
+		t.Fatalf("query forwarded name: %v", err)
+	}
+
+	events := sink.Events()
+	if len(events) != 2 {
+		t.Fatalf("recorded events = %d, want 2", len(events))
+	}
+
+	blocked := events[0]
+	if blocked.Outcome != querylog.OutcomeBlocked {
+		t.Errorf("blocked outcome = %q", blocked.Outcome)
+	}
+	if blocked.Domain != "ads.blocked.example" || blocked.QueryType != "A" {
+		t.Errorf("blocked event domain/type = %q/%q", blocked.Domain, blocked.QueryType)
+	}
+	if blocked.ClientIP != "127.0.0.1" {
+		t.Errorf("blocked client = %q, want 127.0.0.1", blocked.ClientIP)
+	}
+	if blocked.RuleID != 7 || blocked.RuleKind != "deny" || blocked.RuleDomain != "blocked.example" {
+		t.Errorf("blocked rule metadata = %#v", blocked)
+	}
+	if blocked.ResponseCode != "NXDOMAIN" || blocked.Upstream != "" {
+		t.Errorf("blocked response/upstream = %q/%q", blocked.ResponseCode, blocked.Upstream)
+	}
+	if blocked.DurationMS < 0 || blocked.Timestamp.IsZero() {
+		t.Errorf("blocked timing metadata = %#v", blocked)
+	}
+
+	forwarded := events[1]
+	if forwarded.Outcome != querylog.OutcomeForwarded {
+		t.Errorf("forwarded outcome = %q", forwarded.Outcome)
+	}
+	if forwarded.Domain != "example.test" || forwarded.ResponseCode != "NOERROR" {
+		t.Errorf("forwarded event = %#v", forwarded)
+	}
+	if forwarded.Upstream != upstream.Address {
+		t.Errorf("forwarded upstream = %q, want %q", forwarded.Upstream, upstream.Address)
+	}
+	if forwarded.RuleID != 0 || forwarded.RuleKind != "" {
+		t.Errorf("forwarded event unexpectedly has rule metadata: %#v", forwarded)
 	}
 }
 
@@ -227,7 +292,7 @@ func startUpstream(t *testing.T, handler dns.Handler) *testutil.DNSUpstream {
 func startTestServer(t *testing.T, upstreams []string, timeout time.Duration, maxInflight int) *Server {
 	t.Helper()
 
-	return startTestServerWithMatcher(t, upstreams, timeout, maxInflight, nil)
+	return startTestServerFull(t, upstreams, timeout, maxInflight, nil, nil)
 }
 
 func startTestServerWithMatcher(
@@ -239,12 +304,26 @@ func startTestServerWithMatcher(
 ) *Server {
 	t.Helper()
 
+	return startTestServerFull(t, upstreams, timeout, maxInflight, matcher, nil)
+}
+
+func startTestServerFull(
+	t *testing.T,
+	upstreams []string,
+	timeout time.Duration,
+	maxInflight int,
+	matcher RuleMatcher,
+	queryLog QuerySink,
+) *Server {
+	t.Helper()
+
 	server, err := New(Config{
 		Listen:         "127.0.0.1:0",
 		Upstreams:      upstreams,
 		RequestTimeout: timeout,
 		MaxInflight:    maxInflight,
 		Matcher:        matcher,
+		QueryLog:       queryLog,
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
@@ -299,6 +378,23 @@ func writeAReply(w dns.ResponseWriter, request *dns.Msg) {
 		A: net.ParseIP("192.0.2.20").To4(),
 	})
 	_ = w.WriteMsg(reply)
+}
+
+type recordingQuerySink struct {
+	mu     sync.Mutex
+	events []querylog.Event
+}
+
+func (s *recordingQuerySink) Record(event querylog.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+}
+
+func (s *recordingQuerySink) Events() []querylog.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]querylog.Event(nil), s.events...)
 }
 
 func unusedUDPAddress(t *testing.T) string {

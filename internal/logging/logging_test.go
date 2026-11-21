@@ -29,6 +29,25 @@ func TestNewJSONLogger(t *testing.T) {
 	}
 }
 
+func TestNewWithBufferMirrorsRecords(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	logger, buffer := NewWithBuffer(&output, slog.LevelInfo, "json", 10)
+	logger.Info("listener started", "port", 1053)
+
+	if !strings.Contains(output.String(), "listener started") {
+		t.Errorf("stdout output is missing record: %s", output.String())
+	}
+	entries := buffer.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("buffer entries = %d, want 1", len(entries))
+	}
+	if entries[0].Message != "listener started" || entries[0].Attributes["port"] != int64(1053) {
+		t.Errorf("buffer entry = %#v", entries[0])
+	}
+}
+
 func TestNewTextLoggerHonorsLevel(t *testing.T) {
 	t.Parallel()
 

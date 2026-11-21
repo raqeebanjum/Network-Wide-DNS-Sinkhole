@@ -15,6 +15,8 @@ import (
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/config"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/dnsserver"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/logging"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/oplog"
+	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/querylog"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/rules"
 	"github.com/raqeebanjum/network-wide-dns-sinkhole/internal/store"
 )
@@ -32,7 +34,12 @@ func run() error {
 		return fmt.Errorf("load configuration: %w", err)
 	}
 
-	logger := logging.New(os.Stdout, cfg.LogLevel, cfg.LogFormat)
+	logger, logBuffer := logging.NewWithBuffer(
+		os.Stdout,
+		cfg.LogLevel,
+		cfg.LogFormat,
+		oplog.DefaultCapacity,
+	)
 	logger.Info("starting network-wide DNS sinkhole",
 		"dns_address", cfg.DNSListen,
 		"http_address", cfg.HTTPListen,
@@ -59,12 +66,28 @@ func run() error {
 	}
 	logger.Info("rules loaded", "count", ruleManager.Count())
 
+	queryWriter, err := querylog.NewWriter(database, querylog.WriterOptions{
+		Retention: cfg.QueryRetention,
+		Logger:    logger,
+	})
+	if err != nil {
+		return fmt.Errorf("start query logger: %w", err)
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := queryWriter.Close(closeCtx); err != nil {
+			logger.Error("close query logger", "error", err)
+		}
+	}()
+
 	dnsService, err := dnsserver.New(dnsserver.Config{
 		Listen:         cfg.DNSListen,
 		Upstreams:      cfg.Upstreams,
 		RequestTimeout: cfg.DNSRequestTimeout,
 		MaxInflight:    cfg.DNSMaxInflight,
 		Matcher:        ruleManager,
+		QueryLog:       queryWriter,
 		Logger:         logger,
 	})
 	if err != nil {
@@ -81,8 +104,11 @@ func run() error {
 	httpServer := &http.Server{
 		Addr: cfg.HTTPListen,
 		Handler: api.NewHandler(api.Dependencies{
-			Rules:  ruleManager,
-			Logger: logger,
+			Rules:      ruleManager,
+			Queries:    database,
+			SystemLogs: logBuffer,
+			LogStats:   queryWriter,
+			Logger:     logger,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
